@@ -1,1 +1,922 @@
-__DEMO_PLACEHOLDER__
+<!-- PTTV-Live-Tracker-Demo -->
+<!-- Schema 1.3.0 / Tracker v2.4.1 — DEMO HARNESS (260523 b: + iOS / touch drag-reorder fix via Pointer Events) -->
+<!--   • Identical code paths to production PTTV-Live-Tracker.html, but uses ISOLATED localStorage keys (pttv_demo_*) -->
+<!--   • Open in any browser — no Chrome extension or live show required -->
+<!--   • Demo control bar at top: Load 10/25/40 mock items + Clear demo data + Show schema sample -->
+<!--   • Mock dataset includes: 13 questions, 11 comments, 16 shoutouts (geographic mentions) — 40 total -->
+<!--   • Suggested test flow: Load 25 items → toggle aired on 5 → flag 3 as todo → archive 4 → check Archive tab → export JSON → verify Schema 1.2 shape -->
+<!--   • SYNC NOTE: when production tracker changes, this file needs the same updates manually (only differences: localStorage keys + demo bar) -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PTTV Tracker DEMO — Schema 1.2 smoke test</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #faf8f5; color: #222; margin: 0 auto; padding: 24px; max-width: min(1600px, 95vw); }
+  h1 { margin: 0 0 8px 0; font-size: 24px; }
+  .subtitle { color: #888; font-size: 13px; margin-bottom: 24px; line-height: 1.5; }
+  .subtitle code { background: #f0ebe2; padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+  .controls { display: flex; gap: 10px; margin-bottom: 24px; flex-wrap: wrap; }
+  .controls button { padding: 8px 14px; background: #333; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit; transition: background 120ms; }
+  .controls button:hover { background: #555; }
+  .controls button.archive-bulk { background: #b85c00; }
+  .controls button.archive-bulk:hover { background: #d06a00; }
+  .controls button.danger { background: #c33; }
+  .controls button.danger:hover { background: #e44; }
+  .sections { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+  @media (max-width: 900px) { .sections { grid-template-columns: 1fr; } }
+  .section { background: #fff; border: 1px solid #e5e0d8; border-radius: 10px; padding: 16px; display: flex; flex-direction: column; min-height: 200px; }
+  .section h2 { margin: 0 0 4px 0; font-size: 15px; letter-spacing: 1px; text-transform: uppercase; color: #666; }
+  .section .count { font-size: 11px; color: #aaa; font-weight: normal; margin-bottom: 10px; font-variant-numeric: tabular-nums; }
+  .section.questions h2 { color: #7e3a93; }
+  .section.comments  h2 { color: #1d7373; }
+  .section.shoutouts h2 { color: #c89211; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 2px solid #f0ebe2; }
+  .tab-btn { flex: 1; padding: 5px 10px; background: transparent; border: 1px solid #e5e0d8; border-radius: 5px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; color: #888; cursor: pointer; font-family: inherit; transition: all 120ms; }
+  .tab-btn:hover { background: #faf6ef; color: #555; }
+  .tab-btn.active { color: #fff; border-color: transparent; }
+  .section.questions .tab-btn.active { background: #7e3a93; }
+  .section.comments  .tab-btn.active { background: #1d7373; }
+  .section.shoutouts .tab-btn.active { background: #c89211; }
+  .tab-count { font-size: 10px; opacity: 0.75; margin-left: 3px; font-variant-numeric: tabular-nums; }
+  ul { list-style: none; margin: 0; padding: 0; max-height: 65vh; overflow-y: auto; flex: 1; }
+  /* v2.1.2: cards become two-row blocks — controls header on top, content below using full card width */
+  li.card { display: flex; flex-direction: column; gap: 4px; padding: 7px 9px; margin-bottom: 5px; border-radius: 5px; font-size: 13px; line-height: 1.4; transition: background-color 160ms, opacity 160ms; border: 1px solid transparent; }
+  li.card:last-child { margin-bottom: 0; }
+  /* v2.1.2: category background tints — at-a-glance column identity, paler than the column header palette so cards don't overwhelm the text */
+  .section.questions li.card { background-color: #f3edf7; }   /* very light lavender, matches #7e3a93 header */
+  .section.comments  li.card { background-color: #e5f0f0; }   /* very light mint, matches #1d7373 header */
+  .section.shoutouts li.card { background-color: #f9efd9; }   /* very light cream, matches #c89211 header */
+  /* Hover lift */
+  .section.questions li.card:hover { background-color: #ece2f3; }
+  .section.comments  li.card:hover { background-color: #d8e8e8; }
+  .section.shoutouts li.card:hover { background-color: #f5e6c4; }
+  /* Archived: dim the card, strike the text */
+  li.card.archived { opacity: 0.55; }
+  li.card.archived .text { text-decoration: line-through; color: #888; }
+  li.card.archived .user { color: #aaa; }
+  /* v2.1.2: AIRED marker-fill is on the TEXT span only, not the whole card — category color stays visible */
+  li.card.aired .text { background-color: #fff8c4; padding: 0 4px; border-radius: 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+  li.card.aired.archived .text { background-color: #f3eecc; color: #8a7a3a; }  /* subdued when both archived + aired */
+  /* v2.1.2: thin header row holds all controls; doesn't compete for text-wrap space */
+  /* v2.1.3: cardId pill — non-sequential 3-digit identifier shown inline before the username */
+  .card-id { font-family: 'SF Mono', Monaco, Menlo, monospace; font-size: 12px; font-weight: 700; color: #555; background-color: rgba(255,255,255,0.85); border: 1px solid rgba(0,0,0,0.18); border-radius: 4px; padding: 1px 6px; letter-spacing: 0.4px; margin-right: 7px; vertical-align: 1px; }
+  li.card.archived .card-id { color: #999; background-color: rgba(255,255,255,0.5); }
+  /* Phase H: card body becomes click target for expand/collapse */
+  .card-body { cursor: pointer; }
+  .card-body * { cursor: text; }
+  .notes-indicator { font-size: 13px; flex-shrink: 0; opacity: 0.75; line-height: 1; padding: 0 2px; }
+  .header-spacer { flex: 1; }
+  .action-btn.expand-btn { font-size: 11px; padding: 2px 7px; min-width: 22px; opacity: 0.55; }
+  .action-btn.expand-btn:hover { opacity: 1; }
+  li.card.expanded .action-btn.expand-btn { opacity: 1; background-color: rgba(0,0,0,0.06); }
+  .card-expanded { display: none; padding-top: 8px; margin-top: 6px; border-top: 1px solid rgba(0,0,0,0.08); }
+  li.card.expanded .card-expanded { display: block; animation: card-expand-in 180ms ease-out; }
+  @keyframes card-expand-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+  .notes-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: #888; font-weight: 600; margin-bottom: 4px; display: block; }
+  .notes-textarea { width: 100%; min-height: 60px; padding: 6px 8px; border: 1px solid rgba(0,0,0,0.15); border-radius: 4px; font-family: inherit; font-size: 12px; line-height: 1.5; background-color: rgba(255,255,255,0.7); resize: vertical; box-sizing: border-box; color: #222; }
+  .notes-textarea:focus { outline: none; border-color: rgba(0,0,0,0.35); background-color: #fff; }
+  .notes-textarea::placeholder { color: #b5b1aa; font-style: italic; }
+  /* Phase I: user-stats badge in card header */
+  .user-stats { font-family: 'SF Mono', Monaco, Menlo, monospace; font-size: 10px; font-weight: 700; color: #555; background-color: rgba(255,255,255,0.7); border: 1px solid rgba(0,0,0,0.15); border-radius: 3px; padding: 1px 5px; letter-spacing: 0.4px; flex-shrink: 0; cursor: pointer; transition: background-color 120ms; }
+  .user-stats:hover { background-color: rgba(255,255,255,1); border-color: rgba(0,0,0,0.3); }
+  /* Phase I: siblings section in expanded view */
+  .siblings-section { margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(0,0,0,0.08); }
+  .siblings-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: #888; font-weight: 600; margin-bottom: 8px; display: block; }
+  .sibling-empty { font-style: italic; color: #aaa; font-size: 11px; padding: 4px 6px; }
+  .sibling-row { display: flex; align-items: flex-start; gap: 6px; padding: 5px 7px; margin-bottom: 4px; border-radius: 4px; cursor: pointer; font-size: 11px; line-height: 1.45; transition: filter 120ms, transform 80ms; }
+  .sibling-row:hover { filter: brightness(0.96); }
+  .sibling-row:active { transform: translateY(1px); }
+  .sibling-row.cat-questions { background-color: #f3edf7; }
+  .sibling-row.cat-comments  { background-color: #e5f0f0; }
+  .sibling-row.cat-shoutouts { background-color: #f9efd9; }
+  .sibling-row.archived-sib { opacity: 0.55; }
+  .sibling-row.archived-sib .sibling-text { text-decoration: line-through; }
+  .sibling-row.aired-sib .sibling-text { background-color: #fff8c4; padding: 0 3px; border-radius: 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+  .sibling-row.todo-sib { box-shadow: inset 3px 0 0 #b85c00; }
+  .sibling-cat-badge { font-family: 'SF Mono', Monaco, Menlo, monospace; font-weight: 700; font-size: 9px; letter-spacing: 0.6px; flex-shrink: 0; padding: 1px 5px; border-radius: 3px; color: #fff; align-self: flex-start; margin-top: 1px; }
+  .sibling-cat-badge.cat-questions { background-color: #7e3a93; }
+  .sibling-cat-badge.cat-comments  { background-color: #1d7373; }
+  .sibling-cat-badge.cat-shoutouts { background-color: #c89211; }
+  .sibling-cardid { font-family: 'SF Mono', Monaco, Menlo, monospace; font-weight: 700; font-size: 10px; color: #555; background-color: rgba(255,255,255,0.8); border: 1px solid rgba(0,0,0,0.12); border-radius: 3px; padding: 0 4px; flex-shrink: 0; align-self: flex-start; margin-top: 1px; letter-spacing: 0.3px; }
+  .sibling-text { flex: 1; color: #333; word-break: break-word; }
+  .sibling-statuses { flex-shrink: 0; display: flex; gap: 4px; align-items: center; align-self: flex-start; margin-top: 1px; font-size: 11px; opacity: 0.85; }
+  /* Phase I: card pulse animation (navigation target indicator) */
+  @keyframes card-pulse-flash { 0% { box-shadow: 0 0 0 0 rgba(200, 146, 17, 0.55); } 60% { box-shadow: 0 0 0 12px rgba(200, 146, 17, 0); } 100% { box-shadow: 0 0 0 0 rgba(200, 146, 17, 0); } }
+  li.card.card-pulse { animation: card-pulse-flash 1.5s ease-out; outline: 2px solid #c89211; outline-offset: 1px; }
+  /* Phase I: back pill (navigation breadcrumb) */
+  .back-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; margin-bottom: 6px; background-color: #fff8e0; border: 1px solid #c89211; border-radius: 12px; font-size: 11px; color: #8a6510; cursor: pointer; transition: background-color 120ms; align-self: flex-start; }
+  .back-pill:hover { background-color: #ffefb8; }
+  .back-pill .arrow { font-weight: 700; font-size: 12px; }
+  .back-pill .close { margin-left: 4px; opacity: 0.6; font-size: 14px; line-height: 1; padding: 0 2px; }
+  .back-pill .close:hover { opacity: 1; }
+  /* Phase C: timestamp pill in card-header */
+  .timestamp-pill { font-size: 10px; color: #999; flex-shrink: 0; padding: 0 4px; font-variant-numeric: tabular-nums; }
+  .timestamp-pill .rel { font-weight: 600; }
+  .timestamp-pill .abs { opacity: 0.7; margin-left: 3px; }
+  /* Phase C: drag-handle in card-header */
+  .drag-handle { cursor: grab; opacity: 0.4; font-size: 14px; padding: 6px 8px 6px 2px; line-height: 1; flex-shrink: 0; font-weight: 700; color: #666; user-select: none; -webkit-user-select: none; -ms-user-select: none; touch-action: none; -webkit-touch-callout: none; }
+  .drag-handle:hover { opacity: 0.85; }
+  .drag-handle:active { cursor: grabbing; }
+  li.card.dragging { opacity: 0.35; }
+  li.card.drag-over-top { box-shadow: inset 0 3px 0 #c89211; }
+  /* Phase C: command palette drawer */
+  .palette-drawer { background: #fff; border: 1px solid #e5e0d8; border-radius: 10px; margin-bottom: 18px; overflow: hidden; }
+  .palette-toggle { width: 100%; padding: 9px 14px; background: transparent; border: none; font-size: 12px; font-weight: 600; color: #555; text-align: left; cursor: pointer; font-family: inherit; display: flex; align-items: center; gap: 6px; transition: background 120ms; }
+  .palette-toggle:hover { background: #faf6ef; }
+  .palette-toggle .chevron { font-size: 10px; transition: transform 180ms; }
+  .palette-drawer.open .palette-toggle .chevron { transform: rotate(90deg); }
+  .palette-body { display: none; padding: 6px 14px 14px; border-top: 1px solid #f0ebe2; font-size: 12px; line-height: 1.6; color: #555; }
+  .palette-drawer.open .palette-body { display: block; }
+  .palette-section { margin-top: 8px; }
+  .palette-section h3 { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: #888; margin: 8px 0 4px; font-weight: 700; }
+  .palette-cmd { display: inline-block; font-family: 'SF Mono', Monaco, Menlo, monospace; font-size: 11px; background: #f0ebe2; padding: 1px 6px; border-radius: 3px; color: #333; margin-right: 4px; }
+  .palette-note { color: #888; font-size: 11px; margin-top: 4px; font-style: italic; }
+  .card-header { display: flex; align-items: center; gap: 6px; padding-bottom: 4px; border-bottom: 1px solid rgba(0,0,0,0.06); }
+  .card-body { word-break: break-word; }
+  input[type="checkbox"] { cursor: pointer; flex-shrink: 0; margin: 0; }
+  label { cursor: default; display: block; }
+  .user { font-weight: 600; color: #555; }
+  /* Action buttons sit in the .card-header row */
+  .action-btn { background: transparent; border: 1px solid rgba(0,0,0,0.12); color: #666; border-radius: 4px; padding: 2px 6px; font-size: 12px; line-height: 1.2; cursor: pointer; font-family: inherit; flex-shrink: 0; opacity: 0.5; transition: opacity 120ms, background 120ms, border-color 120ms, color 120ms; }
+  .action-btn:hover { opacity: 1; }
+  .action-btn.aired-btn.active { background: #fff8c4; border-color: #c89211; color: #8a6510; opacity: 1; }
+  .action-btn.todo-btn { padding: 2px 8px; letter-spacing: 0.15px; }
+  .action-btn.todo-btn.active { background: #fff1e0; border-color: #b85c00; color: #b85c00; opacity: 1; }
+  .delete-btn { background: transparent; border: none; color: #c33; font-size: 18px; line-height: 1; padding: 0 4px; cursor: pointer; font-weight: 700; flex-shrink: 0; opacity: 0.5; transition: opacity 120ms; margin-left: auto; }
+  .delete-btn:hover { opacity: 1; }
+  .empty { color: #ccc; font-style: italic; font-size: 12px; padding: 8px 4px; }
+  .legend-bar { font-size: 11px; color: #888; margin-top: 18px; padding: 10px 14px; background: #fff; border: 1px solid #e5e0d8; border-radius: 8px; line-height: 1.6; }
+  .legend-bar code { background: #f0ebe2; padding: 1px 6px; border-radius: 4px; font-size: 11px; }
+  .legend-bar .palette-chip { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 3px; vertical-align: middle; border: 1px solid rgba(0,0,0,0.1); }
+  /* Demo harness controls — only present in PTTV-Live-Tracker-Demo.html */
+  .demo-bar { background: linear-gradient(135deg, #fff8c4 0%, #fff1e0 100%); border: 1px solid #c89211; border-radius: 8px; padding: 12px 16px; margin: -8px 0 20px 0; font-size: 13px; line-height: 1.7; }
+  .demo-bar strong { color: #8a6510; margin-right: 8px; }
+  .demo-btn { padding: 5px 12px; border: none; border-radius: 5px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; margin-right: 6px; transition: opacity 120ms; }
+  .demo-btn:hover { opacity: 0.85; }
+  .demo-btn.primary { background: #36a; color: #fff; }
+  .demo-btn.warn { background: #b85c00; color: #fff; }
+  .demo-btn.info { background: #555; color: #fff; }
+  .demo-hint { display: block; margin-top: 8px; color: #666; font-size: 11px; font-style: italic; }
+</style>
+</head>
+<body>
+<h1>🧪 PTTV Tracker DEMO — Schema 1.2 smoke test</h1>
+<div class="subtitle"><strong>Demo harness</strong> for Schema 1.2.2 (Tracker v2.1.2) — isolated from production (storage keys: <code>pttv_demo_questions</code>, <code>pttv_demo_comments</code>, <code>pttv_demo_shoutouts</code>). Use the demo controls below to load mock items, then exercise the new buttons (<strong>📺</strong> aired, <strong>→</strong> todo) and verify the export JSON has the Schema 1.2 shape. This file is NOT fetched by Genesis — it's a standalone smoke test you open directly in a browser.</div>
+<div class="demo-bar">
+  <strong>🧪 Demo controls:</strong>
+  <button class="demo-btn primary" onclick="loadMockData(10)">Load 10 items</button>
+  <button class="demo-btn primary" onclick="loadMockData(25)">Load 25 items</button>
+  <button class="demo-btn primary" onclick="loadMockData(40)">Load all 40 items</button>
+  <button class="demo-btn warn" onclick="clearDemoData()">Clear demo data</button>
+  <button class="demo-btn info" onclick="showSchemaSample()">Show schema sample</button>
+  <span class="demo-hint">Mock items include geographic mentions (→ shoutouts), product references (Mimi/Zoe/Charlie/Buddy/Jane/Maurice/Daily/Jack), and 5 items that read like todos. Use them to exercise all Schema 1.2 features.</span>
+</div>
+<div class="controls">
+  <button onclick="exportActive()">📋 Copy active to clipboard</button>
+  <button onclick="exportAll()">📋 Copy ALL to clipboard</button>
+  <button onclick="exportJSON()">💾 Export full state (JSON)</button>
+  <button class="archive-bulk" onclick="archiveAll()">🗄️ Archive everything</button>
+  <button class="danger" onclick="deleteAllArchived()">🗑️ Permanently delete all archived</button>
+</div>
+<div class="palette-drawer" id="palette-drawer">
+  <button class="palette-toggle" onclick="document.getElementById('palette-drawer').classList.toggle('open')">
+    <span class="chevron">▶</span>
+    <span>💡 Commands you can give the Genesis</span>
+  </button>
+  <div class="palette-body">
+    <div class="palette-section">
+      <h3>Manual go-cycle</h3>
+      <span class="palette-cmd">go</span> — run one pull/dedupe/categorize cycle
+      <span class="palette-cmd">we're live!</span> — start a manual-mode session (Steps 1–3 setup, then waits for go)
+    </div>
+    <div class="palette-section">
+      <h3>Auto mode</h3>
+      <span class="palette-cmd">we're live, auto!</span> — start an auto-mode session (Steps 1–4 setup, then watches heartbeat)
+      <span class="palette-cmd">auto</span> — switch from manual to auto mid-session
+      <span class="palette-cmd">manual</span> / <span class="palette-cmd">fallback</span> — switch back to manual
+      <span class="palette-cmd">pause</span> — stop polling, heartbeat keeps ticking
+      <span class="palette-cmd">resume</span> — resume auto polling after pause
+    </div>
+    <div class="palette-section">
+      <h3>Status + end</h3>
+      <span class="palette-cmd">status</span> — current mode, tick count, totals across Q/C/S
+      <span class="palette-cmd">we're done</span> / <span class="palette-cmd">wrap up</span> — run end-of-session ritual (merge archive + generate wrap-up checklist)
+    </div>
+    <div class="palette-note">These are typed in the Claude Chrome-extension chat, not here in the tracker. This drawer is a cheat sheet.</div>
+  </div>
+</div>
+<div class="sections">
+  <div class="section questions">
+    <h2>Questions</h2>
+    <div class="count" id="q-count"></div>
+    <div class="tabs">
+      <button class="tab-btn" data-cat="questions" data-tab="active"   onclick="setTab('questions','active')">Active <span class="tab-count" id="q-tab-active"></span></button>
+      <button class="tab-btn" data-cat="questions" data-tab="archived" onclick="setTab('questions','archived')">Archived <span class="tab-count" id="q-tab-archived"></span></button>
+    </div>
+    <ul id="questions-list"></ul>
+  </div>
+  <div class="section comments">
+    <h2>Comments</h2>
+    <div class="count" id="c-count"></div>
+    <div class="tabs">
+      <button class="tab-btn" data-cat="comments" data-tab="active"   onclick="setTab('comments','active')">Active <span class="tab-count" id="c-tab-active"></span></button>
+      <button class="tab-btn" data-cat="comments" data-tab="archived" onclick="setTab('comments','archived')">Archived <span class="tab-count" id="c-tab-archived"></span></button>
+    </div>
+    <ul id="comments-list"></ul>
+  </div>
+  <div class="section shoutouts">
+    <h2>Shoutouts</h2>
+    <div class="count" id="s-count"></div>
+    <div class="tabs">
+      <button class="tab-btn" data-cat="shoutouts" data-tab="active"   onclick="setTab('shoutouts','active')">Active <span class="tab-count" id="s-tab-active"></span></button>
+      <button class="tab-btn" data-cat="shoutouts" data-tab="archived" onclick="setTab('shoutouts','archived')">Archived <span class="tab-count" id="s-tab-archived"></span></button>
+    </div>
+    <ul id="shoutouts-list"></ul>
+  </div>
+</div>
+<div class="legend-bar">
+  <strong>How it works:</strong> Check an item on Active → moves to Archive (no lingering strikethrough on Active). Uncheck on Archive → restores. <strong>📺 aired</strong> (<span class="palette-chip" style="background:#fff8c4;"></span> yellow marker-fill) = mentioned on-air; visible across Active and Archive so end-of-show you can see what made it vs what didn't. <strong>→ todo</strong> (<span class="palette-chip" style="background:#fff1e0; border-color:#b85c00;"></span> orange flag) = pull into the end-of-session team-todos artifact. Per-item <span style="color: #c33; font-weight: 700;">×</span> and "Permanently delete all archived" are the only destructive operations — both confirm before acting. Both tabs start empty each session; the long-term project archive is the persistent store.
+</div>
+<script>
+  const CATEGORIES = ['questions', 'comments', 'shoutouts'];
+  const KEYS = { questions: 'pttv_demo_questions', comments: 'pttv_demo_comments', shoutouts: 'pttv_demo_shoutouts' };
+  const tabState = { questions: 'active', comments: 'active', shoutouts: 'active' };
+
+  // Schema 1.2: items shape = { text, checked, archived, aired, todo, firstSeenAt }
+  // Backward-compatible with 1.1 (aired/todo default false when reading older data).
+  function normalizeItem(item) {
+    return {
+      text: item.text,
+      checked: !!item.checked,
+      archived: 'archived' in item ? !!item.archived : false,
+      aired: 'aired' in item ? !!item.aired : false,
+      todo: 'todo' in item ? !!item.todo : false,
+      firstSeenAt: 'firstSeenAt' in item ? item.firstSeenAt : null,
+      cardId: ('cardId' in item && item.cardId !== null) ? item.cardId : null,
+      notes: ('notes' in item && typeof item.notes === 'string') ? item.notes : ''
+    };
+  }
+  // Phase H: expand state (in-memory, keyed by cardId; ephemeral UI)
+  const expandedCards = new Set();
+  function isExpanded(cardId) { return cardId !== null && cardId !== undefined && expandedCards.has(cardId); }
+  function toggleExpanded(cardId, category) {
+    if (cardId === null || cardId === undefined) return;
+    if (expandedCards.has(cardId)) expandedCards.delete(cardId);
+    else expandedCards.add(cardId);
+    render(category);
+  }
+  // Phase H: silent save for notes (no re-render churn while typing). Re-renders only on empty↔non-empty boundary (so 📝 indicator updates) or on explicit request (blur).
+  function setNotes(category, idx, value, shouldRender) {
+    const items = load(category);
+    if (!items[idx]) return;
+    const wasEmpty = !items[idx].notes || items[idx].notes.trim().length === 0;
+    const isEmpty = !value || value.trim().length === 0;
+    items[idx].notes = value;
+    save(category, items);
+    if (shouldRender || wasEmpty !== isEmpty) render(category);
+  }
+  // Phase I: navigation state (single-step back trail) + pulse cleanup
+  let navigationSource = null;  // { fromCardId, targetCardId, targetCategory, timestamp }
+  let pulseTimeout = null;
+  // Phase I: Extract handle + platform from item text. Handles '@user [IG] — text', '@user [YT] — text', and '@user — text' formats.
+  function extractUserKey(item) {
+    if (!item || !item.text) return { handle: null, platform: null };
+    const dashIdx = item.text.indexOf(' — ');
+    const userPart = dashIdx > -1 ? item.text.slice(0, dashIdx) : item.text;
+    const m = userPart.match(/^(@?[\w.\-_]+)\s*(?:\[(IG|YT)\])?/);
+    if (!m) return { handle: userPart.trim(), platform: null };
+    return { handle: m[1].trim(), platform: m[2] || null };
+  }
+  // Phase I: Find all items by the same handle across all 3 categories. Returns { questions: [], comments: [], shoutouts: [], total }.
+  function findUserItems(handle) {
+    const result = { questions: [], comments: [], shoutouts: [], total: 0 };
+    if (!handle) return result;
+    for (const cat of CATEGORIES) {
+      const items = load(cat);
+      items.forEach((it, idx) => {
+        const key = extractUserKey(it);
+        if (key.handle === handle) { result[cat].push({ item: it, idx: idx, category: cat }); result.total++; }
+      });
+    }
+    return result;
+  }
+  // Phase I: Navigate to a target card by cardId. Switches tab if needed, scrolls into view, applies pulse animation.
+  function navigateToCard(targetCardId, fromCardId) {
+    if (targetCardId === null || targetCardId === undefined) return;
+    let targetCategory = null, targetItem = null;
+    for (const cat of CATEGORIES) {
+      const items = load(cat);
+      const idx = items.findIndex(it => it.cardId === targetCardId);
+      if (idx > -1) { targetCategory = cat; targetItem = items[idx]; break; }
+    }
+    if (!targetCategory) { console.warn('navigateToCard: cardId not found', targetCardId); return; }
+    // Track previous nav target to clear its pill on re-render
+    const prevCategory = navigationSource ? navigationSource.targetCategory : null;
+    // Set new nav source (only if from is provided and different from target)
+    if (fromCardId !== null && fromCardId !== undefined && fromCardId !== targetCardId) {
+      navigationSource = { fromCardId: fromCardId, targetCardId: targetCardId, targetCategory: targetCategory, timestamp: Date.now() };
+    } else {
+      navigationSource = null;
+    }
+    // Switch tab if needed (target may be archived while user is on Active, or vice versa)
+    const needTab = targetItem.archived ? 'archived' : 'active';
+    if (tabState[targetCategory] !== needTab) tabState[targetCategory] = needTab;
+    render(targetCategory);
+    if (prevCategory && prevCategory !== targetCategory) render(prevCategory);
+    // After DOM settles, scroll + pulse
+    setTimeout(() => {
+      const el = document.querySelector('li.card[data-card-id="' + targetCardId + '"]');
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('card-pulse');
+      if (pulseTimeout) clearTimeout(pulseTimeout);
+      pulseTimeout = setTimeout(() => { el.classList.remove('card-pulse'); pulseTimeout = null; }, 1500);
+    }, 60);
+  }
+  function clearNavigationSource() {
+    const cat = navigationSource ? navigationSource.targetCategory : null;
+    navigationSource = null;
+    if (cat) render(cat);
+  }
+  // Phase C: session-start = earliest firstSeenAt across all categories. Computed per-render so it stays accurate.
+  function getSessionStart() {
+    let earliest = null;
+    for (const cat of CATEGORIES) {
+      for (const it of load(cat)) {
+        if (it.firstSeenAt) {
+          const t = new Date(it.firstSeenAt).getTime();
+          if (earliest === null || t < earliest) earliest = t;
+        }
+      }
+    }
+    return earliest;
+  }
+  function fmtTimestamp(firstSeenAt, sessionStart) {
+    if (!firstSeenAt) return null;
+    const t = new Date(firstSeenAt).getTime();
+    if (isNaN(t)) return null;
+    const relMin = sessionStart !== null ? Math.max(0, Math.floor((t - sessionStart) / 60000)) : 0;
+    // Pacific-ish 12h clock (no tz conversion in v1 — uses local clock since this is run on Matt's machine which IS PT)
+    const d = new Date(t);
+    let h = d.getHours();
+    const m = String(d.getMinutes()).padStart(2, '0');
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12; if (h === 0) h = 12;
+    return { rel: '+' + relMin + 'm', abs: h + ':' + m + ampm };
+  }
+  // Phase C: drag-reorder within a category. sourceCardId is moved to immediately BEFORE targetCardId in the full array.
+  function reorderInCategory(category, sourceCardId, targetCardId) {
+    if (sourceCardId === targetCardId) return;
+    const items = load(category);
+    const srcIdx = items.findIndex(it => it.cardId === sourceCardId);
+    if (srcIdx === -1) return;
+    const [moved] = items.splice(srcIdx, 1);
+    const newTgtIdx = items.findIndex(it => it.cardId === targetCardId);
+    if (newTgtIdx === -1) { items.splice(srcIdx, 0, moved); return; }  // target gone — restore
+    items.splice(newTgtIdx, 0, moved);
+    save(category, items);
+    render(category);
+  }
+  // v2.1.3: non-sequential 3-digit cardId with collision-retry. Scans all 3 categories for in-use IDs and re-rolls until unique.
+  function generateCardId() {
+    const inUse = new Set();
+    for (const cat of CATEGORIES) {
+      for (const item of load(cat)) {
+        if (item.cardId !== null && item.cardId !== undefined) inUse.add(item.cardId);
+      }
+    }
+    let id, attempts = 0;
+    do {
+      id = 100 + Math.floor(Math.random() * 900);  // 100..999 inclusive
+      attempts++;
+      if (attempts > 50) break;  // safety: at 850/900 IDs used we just accept whatever; should never happen at PTTV scale
+    } while (inUse.has(id));
+    return id;
+  }
+  function load(category) { try { return JSON.parse(localStorage.getItem(KEYS[category]) || '[]').map(normalizeItem); } catch (e) { return []; } }
+  function save(category, items) { localStorage.setItem(KEYS[category], JSON.stringify(items)); }
+
+  // Genesis-facing contract: signature unchanged. New flags default to false.
+  function appendItems(category, newItems) {
+    const existing = load(category);
+    const seen = new Set(existing.map(i => i.text));
+    const now = new Date().toISOString();
+    let added = 0;
+    for (const text of newItems) {
+      if (!seen.has(text)) {
+        existing.push({ text, checked: false, archived: false, aired: false, todo: false, firstSeenAt: now, cardId: generateCardId(), notes: '' });
+        seen.add(text); added++;
+      }
+    }
+    save(category, existing); render(category); return added;
+  }
+  window.appendItems = appendItems;
+
+  function setTab(category, tab) { tabState[category] = tab; render(category); }
+
+  function toggleArchived(category, index) {
+    const items = load(category); if (!items[index]) return;
+    const willArchive = !items[index].archived;
+    items[index].archived = willArchive; items[index].checked = willArchive;
+    save(category, items); render(category);
+  }
+  function toggleAired(category, index) {
+    const items = load(category); if (!items[index]) return;
+    items[index].aired = !items[index].aired;
+    save(category, items); render(category);
+  }
+  function toggleTodo(category, index) {
+    const items = load(category); if (!items[index]) return;
+    items[index].todo = !items[index].todo;
+    save(category, items); render(category);
+  }
+  function deleteItem(category, index) {
+    const items = load(category); if (!items[index]) return;
+    if (!confirm('Permanently delete this archived item?\n\n' + items[index].text + '\n\nThis CANNOT be undone. The item will not appear in any future export or the long-term archive.')) return;
+    items.splice(index, 1); save(category, items); render(category);
+  }
+
+  function render(category) {
+    const items = load(category);
+    const indexed = items.map((item, i) => ({ item, idx: i }));
+    const active = indexed.filter(x => !x.item.archived);
+    const archived = indexed.filter(x => x.item.archived);
+    const currentTab = tabState[category];
+    document.getElementById(category[0] + '-count').textContent = active.length + ' active · ' + archived.length + ' archived · ' + items.length + ' total';
+    document.getElementById(category[0] + '-tab-active').textContent = '(' + active.length + ')';
+    document.getElementById(category[0] + '-tab-archived').textContent = '(' + archived.length + ')';
+    document.querySelectorAll('.tab-btn[data-cat="' + category + '"]').forEach(btn => { btn.classList.toggle('active', btn.dataset.tab === currentTab); });
+    const list = document.getElementById(category + '-list');
+    const showing = currentTab === 'active' ? active : archived;
+    const sessionStartRef = getSessionStart();
+    if (showing.length === 0) { list.innerHTML = '<li class="empty">' + (currentTab === 'active' ? 'No active items.' : 'No archived items.') + '</li>'; return; }
+    list.innerHTML = '';
+    showing.forEach(({ item, idx }) => {
+      // v2.1.2: card is a flex column — header row (controls) on top, body row (text) below
+      const li = document.createElement('li');
+      li.className = 'card';
+      if (item.cardId !== null && item.cardId !== undefined) li.setAttribute('data-card-id', item.cardId);
+      if (item.archived) li.classList.add('archived');
+      if (item.aired) li.classList.add('aired');
+      // Phase C v2.4.1: HTML5 D&D removed; reorder driven by Pointer Events on the drag handle (see above). li is no longer draggable.
+      li.draggable = false;
+
+      // ---- CARD HEADER (controls row) ----
+      const header = document.createElement('div');
+      header.className = 'card-header';
+
+      // Phase C: drag handle (leftmost, before checkbox). Pointer Events API for unified mouse/touch/pen support.
+      const dragHandle = document.createElement('span');
+      dragHandle.className = 'drag-handle';
+      dragHandle.textContent = '⋮⋮';
+      dragHandle.title = 'Drag to reorder within this column';
+      dragHandle.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        if (item.cardId === null || item.cardId === undefined) return;
+        try { dragHandle.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+        window.__pttvDrag = {
+          sourceCardId: item.cardId,
+          sourceCategory: category,
+          pointerId: e.pointerId,
+          startX: e.clientX,
+          startY: e.clientY,
+          moved: false,
+          sourceLi: li
+        };
+        li.classList.add('dragging');
+      });
+      dragHandle.addEventListener('pointermove', (e) => {
+        const ds = window.__pttvDrag;
+        if (!ds || ds.pointerId !== e.pointerId) return;
+        if (!ds.moved) {
+          const dx = Math.abs(e.clientX - ds.startX);
+          const dy = Math.abs(e.clientY - ds.startY);
+          if (dx > 5 || dy > 5) ds.moved = true;
+        }
+        if (!ds.moved) return;
+        document.querySelectorAll('.drag-over-top').forEach(el => el.classList.remove('drag-over-top'));
+        const elBelow = document.elementFromPoint(e.clientX, e.clientY);
+        const cardEl = elBelow ? elBelow.closest('li.card') : null;
+        if (!cardEl || cardEl === ds.sourceLi) return;
+        const targetUl = cardEl.parentElement;
+        const targetCategory = targetUl && targetUl.id === 'questions-list' ? 'questions'
+                              : targetUl && targetUl.id === 'comments-list' ? 'comments'
+                              : targetUl && targetUl.id === 'shoutouts-list' ? 'shoutouts'
+                              : null;
+        if (targetCategory === ds.sourceCategory) cardEl.classList.add('drag-over-top');
+      });
+      function __pttvEndDrag(e, commit) {
+        const ds = window.__pttvDrag;
+        if (!ds || ds.pointerId !== e.pointerId) return;
+        try { dragHandle.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+        if (commit && ds.moved) {
+          const elBelow = document.elementFromPoint(e.clientX, e.clientY);
+          const cardEl = elBelow ? elBelow.closest('li.card') : null;
+          if (cardEl && cardEl !== ds.sourceLi) {
+            const targetUl = cardEl.parentElement;
+            const targetCategory = targetUl && targetUl.id === 'questions-list' ? 'questions'
+                                  : targetUl && targetUl.id === 'comments-list' ? 'comments'
+                                  : targetUl && targetUl.id === 'shoutouts-list' ? 'shoutouts'
+                                  : null;
+            const targetCardId = parseInt(cardEl.getAttribute('data-card-id'), 10);
+            if (targetCategory === ds.sourceCategory && !isNaN(targetCardId)) {
+              reorderInCategory(ds.sourceCategory, ds.sourceCardId, targetCardId);
+            }
+          }
+        }
+        document.querySelectorAll('.drag-over-top').forEach(el => el.classList.remove('drag-over-top'));
+        if (ds.sourceLi) ds.sourceLi.classList.remove('dragging');
+        window.__pttvDrag = null;
+      }
+      dragHandle.addEventListener('pointerup', (e) => __pttvEndDrag(e, true));
+      dragHandle.addEventListener('pointercancel', (e) => __pttvEndDrag(e, false));
+      header.appendChild(dragHandle);
+
+      // Checkbox = archive toggle
+      const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = item.archived; cb.id = category + '-' + idx;
+      cb.title = item.archived ? 'Restore to Active' : 'Move to Archive';
+      cb.addEventListener('change', () => toggleArchived(category, idx));
+
+      // Aired button (📺)
+      const airedBtn = document.createElement('button');
+      airedBtn.className = 'action-btn aired-btn' + (item.aired ? ' active' : '');
+      airedBtn.textContent = '📺';
+      airedBtn.title = item.aired ? 'Mark as not aired' : 'Mark as aired (mentioned on-air)';
+      airedBtn.setAttribute('aria-label', airedBtn.title);
+      airedBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); toggleAired(category, idx); });
+
+      // Todo button (🚩todo)
+      const todoBtn = document.createElement('button');
+      todoBtn.className = 'action-btn todo-btn' + (item.todo ? ' active' : '');
+      todoBtn.textContent = '🚩todo';
+      todoBtn.title = item.todo ? 'Unflag from team-todos' : 'Flag for team-todos (end-of-session artifact)';
+      todoBtn.setAttribute('aria-label', todoBtn.title);
+      todoBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); toggleTodo(category, idx); });
+
+      header.appendChild(cb); header.appendChild(airedBtn); header.appendChild(todoBtn);
+
+      // Phase I: user-stats badge — shows cross-column count if this handle has multiple items
+      const userKey = extractUserKey(item);
+      if (userKey.handle) {
+        const userItems = findUserItems(userKey.handle);
+        if (userItems.total > 1) {
+          const stats = document.createElement('span');
+          stats.className = 'user-stats';
+          const parts = [];
+          if (userItems.questions.length > 0) parts.push('Q' + userItems.questions.length);
+          if (userItems.comments.length  > 0) parts.push('C' + userItems.comments.length);
+          if (userItems.shoutouts.length > 0) parts.push('S' + userItems.shoutouts.length);
+          stats.textContent = parts.join('·');
+          stats.title = userKey.handle + ' has ' + userItems.total + ' items across all columns. Click to expand for full list.';
+          stats.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); toggleExpanded(item.cardId, category); });
+          header.appendChild(stats);
+        }
+      }
+
+      // Phase H: notes indicator (only when notes is non-empty)
+      const hasNotes = item.notes && item.notes.trim().length > 0;
+      if (hasNotes) {
+        const notesInd = document.createElement('span');
+        notesInd.className = 'notes-indicator'; notesInd.textContent = '📝';
+        notesInd.title = 'Has notes — expand to view (' + item.notes.trim().length + ' chars)';
+        header.appendChild(notesInd);
+      }
+
+      // Phase C: timestamp pill (before spacer)
+      const ts = fmtTimestamp(item.firstSeenAt, sessionStartRef);
+      if (ts) {
+        const tsPill = document.createElement('span');
+        tsPill.className = 'timestamp-pill';
+        tsPill.innerHTML = '<span class="rel">' + ts.rel + '</span><span class="abs">' + ts.abs + '</span>';
+        tsPill.title = 'First seen ' + ts.rel + ' into the session at ' + ts.abs;
+        header.appendChild(tsPill);
+      }
+
+      // Phase H: spacer + expand toggle (always), then delete (archived only)
+      const spacer = document.createElement('div'); spacer.className = 'header-spacer';
+      header.appendChild(spacer);
+
+      const expandBtn = document.createElement('button');
+      const isExp = isExpanded(item.cardId);
+      expandBtn.className = 'action-btn expand-btn';
+      expandBtn.textContent = isExp ? '▲' : '▼';
+      expandBtn.title = isExp ? 'Collapse card' : 'Expand for notes';
+      expandBtn.setAttribute('aria-label', expandBtn.title);
+      expandBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); toggleExpanded(item.cardId, category); });
+      header.appendChild(expandBtn);
+
+      if (currentTab === 'archived') {
+        const delBtn = document.createElement('button'); delBtn.className = 'delete-btn'; delBtn.textContent = '×'; delBtn.title = 'Permanently delete this item';
+        delBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); deleteItem(category, idx); });
+        header.appendChild(delBtn);
+      }
+
+      // ---- CARD BODY (full-width text) ----
+      const body = document.createElement('div');
+      body.className = 'card-body';
+      // v2.1.3: assign cardId on first render if missing (migration path for pre-1.2.2 items)
+      if (item.cardId === null || item.cardId === undefined) {
+        const cat_items = load(category);
+        if (cat_items[idx]) {
+          cat_items[idx].cardId = generateCardId();
+          save(category, cat_items);
+          item.cardId = cat_items[idx].cardId;
+        }
+      }
+      const label = document.createElement('label');
+      const cardIdHTML = item.cardId !== null && item.cardId !== undefined
+        ? '<span class="card-id">' + item.cardId + '</span>'
+        : '';
+      const dashIdx = item.text.indexOf(' — ');
+      if (dashIdx > -1) {
+        const user = item.text.slice(0, dashIdx);
+        const content = item.text.slice(dashIdx + 3); // skip ' — ' separator
+        label.innerHTML = cardIdHTML + '<span class="user">' + escapeHTML(user) + '</span> — <span class="text">' + escapeHTML(content) + '</span>';
+      } else {
+        label.innerHTML = cardIdHTML + '<span class="text">' + escapeHTML(item.text) + '</span>';
+      }
+      body.appendChild(label);
+
+      // Phase H: body-click is also an expand trigger (with text-selection guard so copy/paste works)
+      body.addEventListener('click', (e) => {
+        if (window.getSelection && window.getSelection().toString().length > 0) return;
+        if (e.target.closest('button, input, textarea, a')) return;
+        toggleExpanded(item.cardId, category);
+      });
+
+      li.appendChild(header);
+      li.appendChild(body);
+
+      // Phase H: expanded section is only rendered when this card is in the expanded set
+      if (isExp) {
+        li.classList.add('expanded');
+        const exp = document.createElement('div');
+        exp.className = 'card-expanded';
+        const notesLabel = document.createElement('label');
+        notesLabel.className = 'notes-label';
+        notesLabel.textContent = '📝 Notes';
+        const ta = document.createElement('textarea');
+        ta.className = 'notes-textarea';
+        ta.value = item.notes || '';
+        ta.placeholder = 'Notes about this ' + (category === 'questions' ? 'question' : category === 'comments' ? 'comment' : 'shoutout') + ' (e.g. what you said on-air, follow-up needed, customer history)…';
+        ta.addEventListener('input', () => setNotes(category, idx, ta.value, false));
+        ta.addEventListener('blur', () => setNotes(category, idx, ta.value, true));
+        exp.appendChild(notesLabel);
+        exp.appendChild(ta);
+
+        // Phase I: siblings section — all OTHER items from this same handle across all columns
+        if (userKey.handle) {
+          const allSibs = findUserItems(userKey.handle);
+          const flat = [];
+          for (const sc of CATEGORIES) {
+            allSibs[sc].forEach(s => { if (s.item.cardId !== item.cardId) flat.push({ ...s, displayCat: sc }); });
+          }
+          const sibSection = document.createElement('div');
+          sibSection.className = 'siblings-section';
+          const sibLabel = document.createElement('label');
+          sibLabel.className = 'siblings-label';
+          sibLabel.textContent = '👥 More from ' + userKey.handle + (userKey.platform ? ' [' + userKey.platform + ']' : '') + ' (' + flat.length + ')';
+          sibSection.appendChild(sibLabel);
+          if (flat.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'sibling-empty';
+            empty.textContent = 'No other items from this user yet.';
+            sibSection.appendChild(empty);
+          } else {
+            flat.forEach(sib => {
+              const row = document.createElement('div');
+              row.className = 'sibling-row cat-' + sib.displayCat;
+              if (sib.item.archived) row.classList.add('archived-sib');
+              if (sib.item.aired) row.classList.add('aired-sib');
+              if (sib.item.todo) row.classList.add('todo-sib');
+              row.setAttribute('data-target-card-id', sib.item.cardId);
+              // Category badge
+              const badge = document.createElement('span');
+              badge.className = 'sibling-cat-badge cat-' + sib.displayCat;
+              badge.textContent = sib.displayCat[0].toUpperCase();
+              badge.title = sib.displayCat;
+              row.appendChild(badge);
+              // cardId
+              const cid = document.createElement('span');
+              cid.className = 'sibling-cardid';
+              cid.textContent = (sib.item.cardId !== null && sib.item.cardId !== undefined) ? sib.item.cardId : '?';
+              row.appendChild(cid);
+              // Content (truncated to 80 chars, full on hover)
+              const textSpan = document.createElement('span');
+              textSpan.className = 'sibling-text';
+              const dashI = sib.item.text.indexOf(' — ');
+              const content = dashI > -1 ? sib.item.text.slice(dashI + 3) : sib.item.text;
+              const truncLen = 80;
+              textSpan.textContent = content.length > truncLen ? content.slice(0, truncLen) + '…' : content;
+              textSpan.title = content;
+              row.appendChild(textSpan);
+              // Status indicators
+              const statuses = document.createElement('span');
+              statuses.className = 'sibling-statuses';
+              if (sib.item.aired) {
+                const s = document.createElement('span'); s.textContent = '📺'; s.title = 'Aired (mentioned on-air)'; statuses.appendChild(s);
+              }
+              if (sib.item.archived) {
+                const s = document.createElement('span'); s.textContent = '✓'; s.title = 'Archived'; statuses.appendChild(s);
+              }
+              if (sib.item.todo) {
+                const s = document.createElement('span'); s.textContent = '🚩'; s.title = 'Flagged for team-todos'; statuses.appendChild(s);
+              }
+              row.appendChild(statuses);
+              // Click → navigate
+              row.addEventListener('click', (e) => {
+                e.preventDefault(); e.stopPropagation();
+                navigateToCard(sib.item.cardId, item.cardId);
+              });
+              sibSection.appendChild(row);
+            });
+          }
+          exp.appendChild(sibSection);
+        }
+
+        li.appendChild(exp);
+      }
+
+      // Phase I: back pill at top of card if this is the navigation target
+      if (navigationSource && navigationSource.targetCardId === item.cardId && navigationSource.fromCardId !== null && navigationSource.fromCardId !== undefined) {
+        const backPill = document.createElement('div');
+        backPill.className = 'back-pill';
+        const arrow = document.createElement('span'); arrow.className = 'arrow'; arrow.textContent = '←';
+        backPill.appendChild(arrow);
+        backPill.appendChild(document.createTextNode(' back to #' + navigationSource.fromCardId + ' '));
+        const close = document.createElement('span'); close.className = 'close'; close.textContent = '×'; close.title = 'Dismiss';
+        close.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); clearNavigationSource(); });
+        backPill.appendChild(close);
+        backPill.addEventListener('click', (e) => {
+          // Click anywhere except × → navigate back
+          if (e.target.classList.contains('close')) return;
+          e.preventDefault(); e.stopPropagation();
+          const dest = navigationSource.fromCardId;
+          navigateToCard(dest, null);  // null fromCardId → no new back pill on dest
+        });
+        li.insertBefore(backPill, li.firstChild);
+      }
+
+      list.appendChild(li);
+    });
+  }
+  function escapeHTML(s) { return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  function exportActive() {
+    const out = [];
+    for (const cat of CATEGORIES) {
+      const prefix = cat[0].toUpperCase();
+      const items = load(cat).filter(i => !i.archived);
+      out.push('++++++++++++++ ' + cat.toUpperCase() + ' ++++++++++++++'); out.push('');
+      if (items.length === 0) out.push('(no active items)');
+      else items.forEach(i => {
+        const idPrefix = (i.cardId !== null && i.cardId !== undefined) ? i.cardId + ' · ' : '';
+        const flags = (i.aired ? ' 📺' : '') + (i.todo ? ' 🚩todo' : '');
+        out.push(prefix + ' [] ' + idPrefix + i.text + flags);
+        if (i.notes && i.notes.trim().length > 0) {
+          out.push('   📝 ' + i.notes.trim().replace(/\n/g, '\n      '));
+        }
+        out.push('');
+      });
+      out.push('','','','');
+    }
+    navigator.clipboard.writeText(out.join('\n')); alert('Active items copied to clipboard.');
+  }
+  function exportAll() {
+    const out = [];
+    for (const cat of CATEGORIES) {
+      const prefix = cat[0].toUpperCase();
+      const items = load(cat);
+      out.push('++++++++++++++ ' + cat.toUpperCase() + ' ++++++++++++++'); out.push('');
+      items.forEach(i => {
+        const box = i.archived ? '[x]' : '[]';
+        const idPrefix = (i.cardId !== null && i.cardId !== undefined) ? i.cardId + ' · ' : '';
+        const flags = (i.aired ? ' 📺' : '') + (i.todo ? ' 🚩todo' : '');
+        out.push(prefix + ' ' + box + ' ' + idPrefix + i.text + flags);
+        if (i.notes && i.notes.trim().length > 0) {
+          out.push('   📝 ' + i.notes.trim().replace(/\n/g, '\n      '));
+        }
+        out.push('');
+      });
+      out.push('','','','');
+    }
+    navigator.clipboard.writeText(out.join('\n')); alert('All items (active + archived) copied to clipboard.');
+  }
+  function exportJSON() {
+    const state = {
+      exportedAt: new Date().toISOString(),
+      trackerVersion: '2.4.1',
+      schemaVersion: '1.3.0',
+      questions: load('questions'),
+      comments: load('comments'),
+      shoutouts: load('shoutouts')
+    };
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'pttv-tracker-state-' + Date.now() + '.json'; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function archiveAll() {
+    const totalActive = CATEGORIES.reduce((sum, cat) => sum + load(cat).filter(i => !i.archived).length, 0);
+    if (totalActive === 0) { alert('Nothing to archive — all items are already archived or the tracker is empty.'); return; }
+    if (!confirm('Move ALL ' + totalActive + ' active items (across all 3 columns) to the Archive tab?\n\nThis is reversible — uncheck items on the Archive tab to restore them. Aired/todo flags are preserved.')) return;
+    for (const cat of CATEGORIES) {
+      const items = load(cat);
+      items.forEach(i => { if (!i.archived) { i.archived = true; i.checked = true; } });
+      save(cat, items); render(cat);
+    }
+  }
+  function deleteAllArchived() {
+    const totalArchived = CATEGORIES.reduce((sum, cat) => sum + load(cat).filter(i => i.archived).length, 0);
+    if (totalArchived === 0) { alert('Nothing to delete — there are no archived items.'); return; }
+    if (!confirm('Permanently delete ALL ' + totalArchived + ' archived items (across all 3 columns)?\n\nThis CANNOT be undone. Make sure you have exported full state first (💾 button above) if you want these items preserved in the long-term archive.')) return;
+    for (const cat of CATEGORIES) {
+      const kept = load(cat).filter(i => !i.archived);
+      save(cat, kept); render(cat);
+    }
+  }
+
+  // ─── DEMO HARNESS DATA + CONTROLS ─────────────────────────────────────────
+  const DEMO_QUESTIONS = [
+  "@artistmom_42 [IG] \u2014 When's the next sale launch? Saving up for the Mimi bag!",
+  "@kp_collects [YT] \u2014 Will you restock the leopard Zoe? Been on the wait list forever",
+  "@thatch_obsessed [IG] \u2014 Irene, what's your favorite pairing for the Charlie tote in winter?",
+  "@new_to_pt_2024 [YT] \u2014 First time tuning in! How does the Buddy crossbody fit a Macbook Air?",
+  "@daily_carrier [IG] \u2014 Does the Daily come in the same brown as Jane?",
+  "@small_collector [IG] \u2014 Are you going to do another tassel sale? Need one in olive",
+  "@parker_too [YT] \u2014 What's the difference between Maurice and the sidekick clutch?",
+  "@studio_lover [IG] \u2014 Will there be a new collab this fall? Loved last year's",
+  "@first_purchase [IG] \u2014 Should I size up on the Jack or stay true to size?",
+  "@bag_questioner [YT] \u2014 Question for Irene \u2014 leather vs canvas for daily use? Pros and cons?",
+  "@returning_customer [IG] \u2014 Are the new monogram options going to come back in stock soon?",
+  "@curious_carl [IG] \u2014 What's the lining made of on the Mimi? Mine is starting to wear",
+  "@vip_24 [YT] \u2014 When do you announce the holiday collection drop?"
+];
+  const DEMO_COMMENTS = [
+  "@love_pt_designs [IG] \u2014 Just got my Zoe yesterday and I'm OBSESSED, thank you team!",
+  "@artistmom_42 [IG] \u2014 The new gold hardware on Mimi is *chef's kiss*",
+  "@thatch_obsessed [IG] \u2014 Watching you and Irene chat is the highlight of my week tbh",
+  "@bagcollector99 [YT] \u2014 Charlie + new wallet combo is perfection for fall",
+  "@daily_show_viewer [YT] \u2014 Parker your camera setup looks great today, much better lighting",
+  "@nashville_nights [IG] \u2014 Streaming this from my office break \u2014 y'all keep me sane on Wednesdays",
+  "@gift_giver [IG] \u2014 Bought one for my mom for her birthday \u2014 she sent me 5 thank-you texts",
+  "@brand_loyal [IG] \u2014 It's so cool you're doing these lives, makes the brand feel so personal",
+  "@product_obsessed [YT] \u2014 The way you photograph the leather always makes me want to buy more",
+  "@just_a_lurker [IG] \u2014 Lurking from work, the new Jack design is fantastic",
+  "@designer_at_heart [IG] \u2014 Your styling videos always inspire me to use my bags differently"
+];
+  const DEMO_SHOUTOUTS = [
+  "@phoenix_party [IG] \u2014 Tuning in from Phoenix Arizona, love you guys!",
+  "@artistmom_42 [IG] \u2014 Scottsdale represent \u2014 watching with my coffee",
+  "@brooklyn_in_house [YT] \u2014 Brooklyn brownstone tuning in",
+  "@nashville_nights [IG] \u2014 Nashville Tennessee in the house!",
+  "@portland_or_rep [IG] \u2014 Portland Oregon \u2014 love the rain love the show",
+  "@kp_collects [YT] \u2014 Atlanta GA representing! Still holding out for the Zoe restock",
+  "@miami_beach_fan [IG] \u2014 Miami Beach watching from the balcony",
+  "@austin_texas_mom [YT] \u2014 Austin TX mom of 3 \u2014 these lives are my me-time",
+  "@dallas_designer [IG] \u2014 Dallas Texas! Question for Irene \u2014 see Q list",
+  "@seattle_grunge [YT] \u2014 Seattle Washington, can't wait for the next drop",
+  "@denver_mountains [IG] \u2014 Denver Colorado, snow day so I'm here!",
+  "@london_uk_fan [IG] \u2014 London UK, staying up late for y'all",
+  "@vip_24 [YT] \u2014 NYC tuning in for the holiday news!",
+  "@toronto_canada_eh [YT] \u2014 Toronto Canada, eh!",
+  "@scottsdale_az [IG] \u2014 Scottsdale Arizona checking in!",
+  "@charleston_sc [IG] \u2014 Charleston SC, the new gold is gorgeous"
+];
+  function loadMockData(count) {
+    // Clear existing demo data first to make repeated loads deterministic
+    CATEGORIES.forEach(cat => localStorage.removeItem(KEYS[cat]));
+    // Distribute count proportionally: ~33% Q, ~27% C, ~40% S (matching dataset distribution)
+    const qCount = Math.min(DEMO_QUESTIONS.length, Math.ceil(count * 0.33));
+    const cCount = Math.min(DEMO_COMMENTS.length, Math.ceil(count * 0.27));
+    const sCount = Math.min(DEMO_SHOUTOUTS.length, count - qCount - cCount);
+    appendItems('questions', DEMO_QUESTIONS.slice(0, qCount));
+    appendItems('comments', DEMO_COMMENTS.slice(0, cCount));
+    appendItems('shoutouts', DEMO_SHOUTOUTS.slice(0, sCount));
+  }
+  function clearDemoData() {
+    if (!confirm('Clear all demo data (Q/C/S)? localStorage keys pttv_demo_* will be wiped. Production keys (pttv_*) are not touched.')) return;
+    CATEGORIES.forEach(cat => localStorage.removeItem(KEYS[cat]));
+    CATEGORIES.forEach(render);
+  }
+  function showSchemaSample() {
+    // Build a one-item sample showing the full Schema 1.2 shape
+    const sample = {
+      exportedAt: new Date().toISOString(),
+      trackerVersion: '2.4.1',
+      schemaVersion: '1.3.0',
+      questions: [{ text: '@sampleuser — sample question here', checked: false, archived: false, aired: true, todo: true, firstSeenAt: new Date().toISOString(), cardId: 427, notes: 'addressed on-air; she also asked about lining material — see card #519' }],
+      comments: [],
+      shoutouts: []
+    };
+    const blob = new Blob([JSON.stringify(sample, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'pttv-tracker-schema-1.2-sample.json'; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  // ──────────────────────────────────────────────────────────────────────────
+  CATEGORIES.forEach(render);
+</script>
+</body>
+</html>
