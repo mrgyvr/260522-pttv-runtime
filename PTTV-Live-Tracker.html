@@ -1,4 +1,5 @@
 <!-- PTTV-Live-Tracker -->
+<!-- Schema 1.3.0 / Tracker v2.4.2 — iOS drag-reorder fix REDUX (260523 b): document-level pointermove/pointerup listeners. v2.4.1 bound listeners to the drag handle itself; on iOS the pointer leaves the handle immediately so move/up never fired and state got stuck. Now: pointerdown on handle attaches transient document-level listeners, removes them cleanly on up/cancel. Defensive cleanup on every pointerdown clears any prior stuck state. -->
 <!-- Schema 1.3.0 / Tracker v2.4.1 — iOS / touch fix for drag-reorder (260523 b): replaces HTML5 D&D with Pointer Events API — works on mouse, touch, and pen unified. Larger hit target on handle. user-select + -webkit-user-select + touch-action: none on handle to suppress text selection on iOS Safari. -->
 <!-- Schema 1.3.0 / Tracker v2.4.0 — Phase C completions (260523 b): timestamps + command palette + drag-reorder -->
 <!--   • TIMESTAMPS: each card now shows '+Nm H:MM' in the header — minutes elapsed since the first item of the session, plus absolute Pacific-style clock time. Uses firstSeenAt; session-start = min(firstSeenAt) across all 3 categories. -->
@@ -481,16 +482,20 @@
       const header = document.createElement('div');
       header.className = 'card-header';
 
-      // Phase C: drag handle (leftmost, before checkbox). Pointer Events API for unified mouse/touch/pen support.
+      // Phase C v2.4.2: drag handle uses pointerdown on handle, attaches document-level pointermove/pointerup/pointercancel for the duration of the drag, removes them cleanly when drag ends. This fixes the v2.4.1 iOS bug where listeners bound to the handle stopped firing as soon as the pointer moved off it.
       const dragHandle = document.createElement('span');
       dragHandle.className = 'drag-handle';
       dragHandle.textContent = '⋮⋮';
       dragHandle.title = 'Drag to reorder within this column';
       dragHandle.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
         if (item.cardId === null || item.cardId === undefined) return;
-        try { dragHandle.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
-        window.__pttvDrag = {
+        e.preventDefault();
+        // Defensive: clear any prior stuck drag state (belt-and-suspenders for v2.4.1 footgun)
+        if (window.__pttvDrag) {
+          document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
+          document.querySelectorAll('.drag-over-top').forEach(el => el.classList.remove('drag-over-top'));
+        }
+        const dragState = {
           sourceCardId: item.cardId,
           sourceCategory: category,
           pointerId: e.pointerId,
@@ -499,53 +504,61 @@
           moved: false,
           sourceLi: li
         };
+        window.__pttvDrag = dragState;
         li.classList.add('dragging');
-      });
-      dragHandle.addEventListener('pointermove', (e) => {
-        const ds = window.__pttvDrag;
-        if (!ds || ds.pointerId !== e.pointerId) return;
-        if (!ds.moved) {
-          const dx = Math.abs(e.clientX - ds.startX);
-          const dy = Math.abs(e.clientY - ds.startY);
-          if (dx > 5 || dy > 5) ds.moved = true;
-        }
-        if (!ds.moved) return;
-        document.querySelectorAll('.drag-over-top').forEach(el => el.classList.remove('drag-over-top'));
-        const elBelow = document.elementFromPoint(e.clientX, e.clientY);
-        const cardEl = elBelow ? elBelow.closest('li.card') : null;
-        if (!cardEl || cardEl === ds.sourceLi) return;
-        const targetUl = cardEl.parentElement;
-        const targetCategory = targetUl && targetUl.id === 'questions-list' ? 'questions'
-                              : targetUl && targetUl.id === 'comments-list' ? 'comments'
-                              : targetUl && targetUl.id === 'shoutouts-list' ? 'shoutouts'
-                              : null;
-        if (targetCategory === ds.sourceCategory) cardEl.classList.add('drag-over-top');
-      });
-      function __pttvEndDrag(e, commit) {
-        const ds = window.__pttvDrag;
-        if (!ds || ds.pointerId !== e.pointerId) return;
-        try { dragHandle.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
-        if (commit && ds.moved) {
-          const elBelow = document.elementFromPoint(e.clientX, e.clientY);
+        function onMove(ev) {
+          const ds = window.__pttvDrag;
+          if (!ds || ds.pointerId !== ev.pointerId) return;
+          if (!ds.moved) {
+            const dx = Math.abs(ev.clientX - ds.startX);
+            const dy = Math.abs(ev.clientY - ds.startY);
+            if (dx > 5 || dy > 5) ds.moved = true;
+          }
+          if (!ds.moved) return;
+          ev.preventDefault();
+          document.querySelectorAll('.drag-over-top').forEach(el => el.classList.remove('drag-over-top'));
+          const elBelow = document.elementFromPoint(ev.clientX, ev.clientY);
           const cardEl = elBelow ? elBelow.closest('li.card') : null;
-          if (cardEl && cardEl !== ds.sourceLi) {
-            const targetUl = cardEl.parentElement;
-            const targetCategory = targetUl && targetUl.id === 'questions-list' ? 'questions'
-                                  : targetUl && targetUl.id === 'comments-list' ? 'comments'
-                                  : targetUl && targetUl.id === 'shoutouts-list' ? 'shoutouts'
-                                  : null;
-            const targetCardId = parseInt(cardEl.getAttribute('data-card-id'), 10);
-            if (targetCategory === ds.sourceCategory && !isNaN(targetCardId)) {
-              reorderInCategory(ds.sourceCategory, ds.sourceCardId, targetCardId);
+          if (!cardEl || cardEl === ds.sourceLi) return;
+          const targetUl = cardEl.parentElement;
+          const targetCategory = targetUl && targetUl.id === 'questions-list' ? 'questions'
+                                : targetUl && targetUl.id === 'comments-list' ? 'comments'
+                                : targetUl && targetUl.id === 'shoutouts-list' ? 'shoutouts'
+                                : null;
+          if (targetCategory === ds.sourceCategory) cardEl.classList.add('drag-over-top');
+        }
+        function cleanup() {
+          document.removeEventListener('pointermove', onMove);
+          document.removeEventListener('pointerup', onUp);
+          document.removeEventListener('pointercancel', onCancel);
+          document.querySelectorAll('.drag-over-top').forEach(el => el.classList.remove('drag-over-top'));
+          if (dragState.sourceLi) dragState.sourceLi.classList.remove('dragging');
+          if (window.__pttvDrag === dragState) window.__pttvDrag = null;
+        }
+        function onUp(ev) {
+          if (window.__pttvDrag !== dragState || ev.pointerId !== dragState.pointerId) { cleanup(); return; }
+          if (dragState.moved) {
+            const elBelow = document.elementFromPoint(ev.clientX, ev.clientY);
+            const cardEl = elBelow ? elBelow.closest('li.card') : null;
+            if (cardEl && cardEl !== dragState.sourceLi) {
+              const targetUl = cardEl.parentElement;
+              const targetCategory = targetUl && targetUl.id === 'questions-list' ? 'questions'
+                                    : targetUl && targetUl.id === 'comments-list' ? 'comments'
+                                    : targetUl && targetUl.id === 'shoutouts-list' ? 'shoutouts'
+                                    : null;
+              const targetCardId = parseInt(cardEl.getAttribute('data-card-id'), 10);
+              if (targetCategory === dragState.sourceCategory && !isNaN(targetCardId)) {
+                reorderInCategory(dragState.sourceCategory, dragState.sourceCardId, targetCardId);
+              }
             }
           }
+          cleanup();
         }
-        document.querySelectorAll('.drag-over-top').forEach(el => el.classList.remove('drag-over-top'));
-        if (ds.sourceLi) ds.sourceLi.classList.remove('dragging');
-        window.__pttvDrag = null;
-      }
-      dragHandle.addEventListener('pointerup', (e) => __pttvEndDrag(e, true));
-      dragHandle.addEventListener('pointercancel', (e) => __pttvEndDrag(e, false));
+        function onCancel(ev) { cleanup(); }
+        document.addEventListener('pointermove', onMove, { passive: false });
+        document.addEventListener('pointerup', onUp);
+        document.addEventListener('pointercancel', onCancel);
+      });
       header.appendChild(dragHandle);
 
       // Checkbox = archive toggle
@@ -821,7 +834,7 @@
   function exportJSON() {
     const state = {
       exportedAt: new Date().toISOString(),
-      trackerVersion: '2.4.1',
+      trackerVersion: '2.4.2',
       schemaVersion: '1.3.0',
       questions: load('questions'),
       comments: load('comments'),
