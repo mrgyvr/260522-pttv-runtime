@@ -1,0 +1,191 @@
+<!-- PTTV-Live-Tracker (v2.0) -->
+<!-- Changes from v1.0: Active/Archive sub-tabs per column · firstSeenAt ISO timestamps per item · -->
+<!-- column palette refresh (purple/teal/gold) · 'Clear everything' renamed to 'Archive everything' · -->
+<!-- 'Remove checked items' retired · per-item × delete + bulk 'Permanently delete all archived' on Archive tab -->
+<!-- Genesis-facing contracts preserved: localStorage keys (pttv_questions/comments/shoutouts) and -->
+<!-- window.appendItems(category, ["user — text", ...]) signature are unchanged. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Live Stream Tracker - Parker Thatch</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #faf8f5; color: #222; margin: 0; padding: 24px; max-width: 1100px; margin: 0 auto; }
+  h1 { margin: 0 0 8px 0; font-size: 24px; }
+  .subtitle { color: #888; font-size: 13px; margin-bottom: 24px; line-height: 1.5; }
+  .subtitle code { background: #f0ebe2; padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+  .controls { display: flex; gap: 10px; margin-bottom: 24px; flex-wrap: wrap; }
+  .controls button { padding: 8px 14px; background: #333; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit; transition: background 120ms; }
+  .controls button:hover { background: #555; }
+  .controls button.archive-bulk { background: #b85c00; }
+  .controls button.archive-bulk:hover { background: #d06a00; }
+  .controls button.danger { background: #c33; }
+  .controls button.danger:hover { background: #e44; }
+  .sections { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+  @media (max-width: 900px) { .sections { grid-template-columns: 1fr; } }
+  .section { background: #fff; border: 1px solid #e5e0d8; border-radius: 10px; padding: 16px; display: flex; flex-direction: column; min-height: 200px; }
+  .section h2 { margin: 0 0 4px 0; font-size: 15px; letter-spacing: 1px; text-transform: uppercase; color: #666; }
+  .section .count { font-size: 11px; color: #aaa; font-weight: normal; margin-bottom: 10px; font-variant-numeric: tabular-nums; }
+  .section.questions h2 { color: #7e3a93; }
+  .section.comments  h2 { color: #1d7373; }
+  .section.shoutouts h2 { color: #c89211; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 2px solid #f0ebe2; }
+  .tab-btn { flex: 1; padding: 5px 10px; background: transparent; border: 1px solid #e5e0d8; border-radius: 5px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; color: #888; cursor: pointer; font-family: inherit; transition: all 120ms; }
+  .tab-btn:hover { background: #faf6ef; color: #555; }
+  .tab-btn.active { color: #fff; border-color: transparent; }
+  .section.questions .tab-btn.active { background: #7e3a93; }
+  .section.comments  .tab-btn.active { background: #1d7373; }
+  .section.shoutouts .tab-btn.active { background: #c89211; }
+  .tab-count { font-size: 10px; opacity: 0.75; margin-left: 3px; font-variant-numeric: tabular-nums; }
+  ul { list-style: none; margin: 0; padding: 0; max-height: 65vh; overflow-y: auto; flex: 1; }
+  li { padding: 8px 4px; border-bottom: 1px solid #f5f0e8; display: flex; align-items: flex-start; gap: 8px; font-size: 13px; line-height: 1.4; }
+  li:last-child { border-bottom: none; }
+  li.archived label { text-decoration: line-through; color: #bbb; }
+  li.archived .user { color: #ccc; }
+  input[type="checkbox"] { margin-top: 3px; cursor: pointer; flex-shrink: 0; }
+  label { cursor: pointer; word-break: break-word; flex: 1; }
+  .user { font-weight: 600; color: #555; }
+  .delete-btn { background: transparent; border: none; color: #c33; font-size: 18px; line-height: 1; padding: 0 4px; cursor: pointer; font-weight: 700; flex-shrink: 0; opacity: 0.5; transition: opacity 120ms; }
+  .delete-btn:hover { opacity: 1; }
+  .empty { color: #ccc; font-style: italic; font-size: 12px; padding: 8px 4px; }
+  .legend-bar { font-size: 11px; color: #888; margin-top: 18px; padding: 10px 14px; background: #fff; border: 1px solid #e5e0d8; border-radius: 8px; line-height: 1.6; }
+  .legend-bar code { background: #f0ebe2; padding: 1px 6px; border-radius: 4px; font-size: 11px; }
+</style>
+</head>
+<body>
+<h1>🎬 Live Stream Tracker — Parker Thatch</h1>
+<div class="subtitle">Q/C/S checklist with <code>localStorage</code> persistence. Check items on <strong>Active</strong> to move them to the <strong>Archive</strong> tab; uncheck on Archive to restore. Storage keys: <code>pttv_questions</code>, <code>pttv_comments</code>, <code>pttv_shoutouts</code>.</div>
+<div class="controls">
+  <button onclick="exportActive()">📋 Copy active to clipboard</button>
+  <button onclick="exportAll()">📋 Copy ALL to clipboard</button>
+  <button onclick="exportJSON()">💾 Export full state (JSON)</button>
+  <button class="archive-bulk" onclick="archiveAll()">🗄️ Archive everything</button>
+  <button class="danger" onclick="deleteAllArchived()">🗑️ Permanently delete all archived</button>
+</div>
+<div class="sections">
+  <div class="section questions">
+    <h2>Questions</h2>
+    <div class="count" id="q-count"></div>
+    <div class="tabs">
+      <button class="tab-btn" data-cat="questions" data-tab="active"   onclick="setTab('questions','active')">Active <span class="tab-count" id="q-tab-active"></span></button>
+      <button class="tab-btn" data-cat="questions" data-tab="archived" onclick="setTab('questions','archived')">Archived <span class="tab-count" id="q-tab-archived"></span></button>
+    </div>
+    <ul id="questions-list"></ul>
+  </div>
+  <div class="section comments">
+    <h2>Comments</h2>
+    <div class="count" id="c-count"></div>
+    <div class="tabs">
+      <button class="tab-btn" data-cat="comments" data-tab="active"   onclick="setTab('comments','active')">Active <span class="tab-count" id="c-tab-active"></span></button>
+      <button class="tab-btn" data-cat="comments" data-tab="archived" onclick="setTab('comments','archived')">Archived <span class="tab-count" id="c-tab-archived"></span></button>
+    </div>
+    <ul id="comments-list"></ul>
+  </div>
+  <div class="section shoutouts">
+    <h2>Shoutouts</h2>
+    <div class="count" id="s-count"></div>
+    <div class="tabs">
+      <button class="tab-btn" data-cat="shoutouts" data-tab="active"   onclick="setTab('shoutouts','active')">Active <span class="tab-count" id="s-tab-active"></span></button>
+      <button class="tab-btn" data-cat="shoutouts" data-tab="archived" onclick="setTab('shoutouts','archived')">Archived <span class="tab-count" id="s-tab-archived"></span></button>
+    </div>
+    <ul id="shoutouts-list"></ul>
+  </div>
+</div>
+<div class="legend-bar"><strong>How it works:</strong> Check an item on Active → it moves to Archive (no lingering strikethrough on Active). Uncheck on Archive → it comes back to Active. Per-item <span style="color: #c33; font-weight: 700;">×</span> and "Permanently delete all archived" are the only destructive operations — both confirm before acting. Both Active and Archive start empty each session; the long-term project archive is the persistent store.</div>
+<script>
+  const CATEGORIES = ['questions', 'comments', 'shoutouts'];
+  const KEYS = { questions: 'pttv_questions', comments: 'pttv_comments', shoutouts: 'pttv_shoutouts' };
+  const tabState = { questions: 'active', comments: 'active', shoutouts: 'active' };
+  function normalizeItem(item) { return { text: item.text, checked: !!item.checked, archived: 'archived' in item ? !!item.archived : false, firstSeenAt: 'firstSeenAt' in item ? item.firstSeenAt : null }; }
+  function load(category) { try { return JSON.parse(localStorage.getItem(KEYS[category]) || '[]').map(normalizeItem); } catch (e) { return []; } }
+  function save(category, items) { localStorage.setItem(KEYS[category], JSON.stringify(items)); }
+  function appendItems(category, newItems) {
+    const existing = load(category);
+    const seen = new Set(existing.map(i => i.text));
+    const now = new Date().toISOString();
+    let added = 0;
+    for (const text of newItems) { if (!seen.has(text)) { existing.push({ text, checked: false, archived: false, firstSeenAt: now }); seen.add(text); added++; } }
+    save(category, existing); render(category); return added;
+  }
+  window.appendItems = appendItems;
+  function setTab(category, tab) { tabState[category] = tab; render(category); }
+  function toggleArchived(category, index) {
+    const items = load(category); if (!items[index]) return;
+    const willArchive = !items[index].archived;
+    items[index].archived = willArchive; items[index].checked = willArchive;
+    save(category, items); render(category);
+  }
+  function deleteItem(category, index) {
+    const items = load(category); if (!items[index]) return;
+    if (!confirm('Permanently delete this archived item?\n\n' + items[index].text + '\n\nThis CANNOT be undone. The item will not appear in any future export or the long-term archive.')) return;
+    items.splice(index, 1); save(category, items); render(category);
+  }
+  function render(category) {
+    const items = load(category);
+    const indexed = items.map((item, i) => ({ item, idx: i }));
+    const active = indexed.filter(x => !x.item.archived);
+    const archived = indexed.filter(x => x.item.archived);
+    const currentTab = tabState[category];
+    document.getElementById(category[0] + '-count').textContent = active.length + ' active · ' + archived.length + ' archived · ' + items.length + ' total';
+    document.getElementById(category[0] + '-tab-active').textContent = '(' + active.length + ')';
+    document.getElementById(category[0] + '-tab-archived').textContent = '(' + archived.length + ')';
+    document.querySelectorAll('.tab-btn[data-cat="' + category + '"]').forEach(btn => { btn.classList.toggle('active', btn.dataset.tab === currentTab); });
+    const list = document.getElementById(category + '-list');
+    const showing = currentTab === 'active' ? active : archived;
+    if (showing.length === 0) { list.innerHTML = '<li class="empty">' + (currentTab === 'active' ? 'No active items.' : 'No archived items.') + '</li>'; return; }
+    list.innerHTML = '';
+    showing.forEach(({ item, idx }) => {
+      const li = document.createElement('li'); if (item.archived) li.classList.add('archived');
+      const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = item.archived; cb.id = category + '-' + idx;
+      cb.addEventListener('change', () => toggleArchived(category, idx));
+      const label = document.createElement('label'); label.setAttribute('for', cb.id);
+      const dashIdx = item.text.indexOf(' — ');
+      if (dashIdx > -1) { const user = item.text.slice(0, dashIdx); const content = item.text.slice(dashIdx); label.innerHTML = '<span class="user">' + escapeHTML(user) + '</span>' + escapeHTML(content); }
+      else { label.textContent = item.text; }
+      li.appendChild(cb); li.appendChild(label);
+      if (currentTab === 'archived') {
+        const delBtn = document.createElement('button'); delBtn.className = 'delete-btn'; delBtn.textContent = '×'; delBtn.title = 'Permanently delete this item';
+        delBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); deleteItem(category, idx); });
+        li.appendChild(delBtn);
+      }
+      list.appendChild(li);
+    });
+  }
+  function escapeHTML(s) { return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function exportActive() {
+    const out = [];
+    for (const cat of CATEGORIES) { const prefix = cat[0].toUpperCase(); const items = load(cat).filter(i => !i.archived); out.push('++++++++++++++ ' + cat.toUpperCase() + ' ++++++++++++++'); out.push('');
+      if (items.length === 0) out.push('(no active items)'); else items.forEach(i => { out.push(prefix + ' [] ' + i.text); out.push(''); });
+      out.push('','','',''); }
+    navigator.clipboard.writeText(out.join('\n')); alert('Active items copied to clipboard.');
+  }
+  function exportAll() {
+    const out = [];
+    for (const cat of CATEGORIES) { const prefix = cat[0].toUpperCase(); const items = load(cat); out.push('++++++++++++++ ' + cat.toUpperCase() + ' ++++++++++++++'); out.push('');
+      items.forEach(i => { const box = i.archived ? '[x]' : '[]'; out.push(prefix + ' ' + box + ' ' + i.text); out.push(''); });
+      out.push('','','',''); }
+    navigator.clipboard.writeText(out.join('\n')); alert('All items (active + archived) copied to clipboard.');
+  }
+  function exportJSON() {
+    const state = { exportedAt: new Date().toISOString(), trackerVersion: '2.0', questions: load('questions'), comments: load('comments'), shoutouts: load('shoutouts') };
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'pttv-tracker-state-' + Date.now() + '.json'; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function archiveAll() {
+    const totalActive = CATEGORIES.reduce((sum, cat) => sum + load(cat).filter(i => !i.archived).length, 0);
+    if (totalActive === 0) { alert('Nothing to archive — all items are already archived or the tracker is empty.'); return; }
+    if (!confirm('Move ALL ' + totalActive + ' active items (across all 3 columns) to the Archive tab?\n\nThis is reversible — uncheck items on the Archive tab to restore them.')) return;
+    for (const cat of CATEGORIES) { const items = load(cat); items.forEach(i => { if (!i.archived) { i.archived = true; i.checked = true; } }); save(cat, items); render(cat); }
+  }
+  function deleteAllArchived() {
+    const totalArchived = CATEGORIES.reduce((sum, cat) => sum + load(cat).filter(i => i.archived).length, 0);
+    if (totalArchived === 0) { alert('Nothing to delete — there are no archived items.'); return; }
+    if (!confirm('Permanently delete ALL ' + totalArchived + ' archived items (across all 3 columns)?\n\nThis CANNOT be undone. Make sure you have exported full state first (💾 button above) if you want these items preserved in the long-term archive.')) return;
+    for (const cat of CATEGORIES) { const kept = load(cat).filter(i => !i.archived); save(cat, kept); render(cat); }
+  }
+  CATEGORIES.forEach(render);
+</script>
+</body>
+</html>

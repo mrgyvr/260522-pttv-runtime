@@ -1,0 +1,90 @@
+<!-- PTTV-Heartbeat (v1.0) -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PTTV Heartbeat — v1.0</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #faf8f5; color: #222; padding: 32px 24px; max-width: 720px; margin: 0 auto; min-height: 100vh; }
+  h1 { font-size: 22px; margin-bottom: 4px; letter-spacing: -0.3px; }
+  .subtitle { color: #888; font-size: 13px; margin-bottom: 28px; line-height: 1.5; }
+  .subtitle code { background: #f0ebe2; padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+  .controls { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 24px; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #888; font-weight: 600; }
+  .field input { padding: 8px 12px; border: 1px solid #e5e0d8; border-radius: 6px; font-size: 14px; width: 110px; font-family: inherit; background: #fff; }
+  .field input:focus { outline: none; border-color: #b85c00; }
+  button { padding: 9px 18px; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; transition: background 120ms; }
+  button.start { background: #2a7; color: #fff; }
+  button.start:hover { background: #229960; }
+  button.stop { background: #c33; color: #fff; }
+  button.stop:hover { background: #e44; }
+  button:disabled { background: #ccc !important; cursor: not-allowed; }
+  .heartbeat-card { background: #fff; border: 1px solid #e5e0d8; border-radius: 12px; padding: 32px; margin-bottom: 20px; text-align: center; }
+  .status-label { font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: #888; margin-bottom: 8px; }
+  .status-value { font-size: 18px; font-weight: 600; margin-bottom: 24px; }
+  .status-value.idle { color: #888; }
+  .status-value.running { color: #2a7; }
+  .status-value.done { color: #36a; }
+  .tick-display { font-family: 'SF Mono', 'Monaco', 'Menlo', monospace; font-size: 72px; font-weight: 700; color: #b85c00; line-height: 1; margin-bottom: 12px; transition: transform 200ms ease-out; }
+  .tick-display.pulse { transform: scale(1.08); }
+  .tick-meta { font-size: 13px; color: #888; }
+  .next-tick { font-size: 14px; color: #555; margin-top: 16px; font-variant-numeric: tabular-nums; }
+  .log-section { margin-bottom: 18px; }
+  .log-section h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; color: #666; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid #f0ebe2; }
+  .log, .go-log { background: #fff; border: 1px solid #e5e0d8; border-radius: 8px; padding: 12px 16px; max-height: 200px; overflow-y: auto; font-family: 'SF Mono', 'Monaco', 'Menlo', monospace; font-size: 12px; line-height: 1.7; }
+  .log .entry, .go-log .go-entry { padding: 4px 0; border-bottom: 1px solid #f5f0e8; }
+  .log .entry:last-child, .go-log .go-entry:last-child { border-bottom: none; }
+  .log .entry .time { color: #888; }
+  .log .entry .action { color: #b85c00; font-weight: 600; margin-left: 8px; }
+  .go-log .go-entry { color: #2a5; }
+  .log .empty, .go-log .empty { color: #ccc; font-style: italic; }
+</style>
+</head>
+<body>
+<h1>💓 PTTV Heartbeat — v1.0</h1>
+<div class="subtitle">Each tick triggers a full <code>go</code> cycle: scrape IG + YT, dedupe, categorize, append to tracker. Web Worker timer survives backgrounding.</div>
+<div class="controls">
+  <div class="field"><label for="interval">Interval (sec)</label><input type="number" id="interval" value="60" min="5" max="600"></div>
+  <div class="field"><label for="duration">Duration (min)</label><input type="number" id="duration" value="60" min="1" max="240"></div>
+  <button class="start" id="start-btn" onclick="startHeartbeat()">▶ Start</button>
+  <button class="stop" id="stop-btn" onclick="stopHeartbeat()" disabled>■ Stop</button>
+</div>
+<div class="heartbeat-card">
+  <div class="status-label">Status</div>
+  <div class="status-value idle" id="status">Idle</div>
+  <div class="status-label">Tick</div>
+  <div class="tick-display" id="tick-counter" data-tick="0">0</div>
+  <div class="tick-meta" id="tick-meta">Press Start to begin polling.</div>
+  <div class="next-tick" id="next-tick"></div>
+</div>
+<div class="log-section">
+  <h2>Heartbeat Internal Log (page-side ground truth)</h2>
+  <div class="log" id="log"><div class="empty">No activity yet.</div></div>
+</div>
+<div class="log-section">
+  <h2>Go Log (one line per completed go cycle)</h2>
+  <div class="go-log" id="go-log"><div class="empty">No go cycles yet.</div></div>
+</div>
+<script>
+  let worker=null,countdownIntervalId=null,tickCount=0,startTimestamp=null,endTimestamp=null,nextTickAt=null,currentIntervalMs=0;
+  const tickEl=document.getElementById('tick-counter'),tickMetaEl=document.getElementById('tick-meta'),nextTickEl=document.getElementById('next-tick'),statusEl=document.getElementById('status'),startBtn=document.getElementById('start-btn'),stopBtn=document.getElementById('stop-btn'),intervalInput=document.getElementById('interval'),durationInput=document.getElementById('duration'),logEl=document.getElementById('log');
+  function fmtTime(d){return d.toTimeString().slice(0,8);}
+  function logEntry(action){if(logEl.querySelector('.empty'))logEl.innerHTML='';const e=document.createElement('div');e.className='entry';e.innerHTML='<span class="time">'+fmtTime(new Date())+'</span><span class="action">'+action+'</span>';logEl.insertBefore(e,logEl.firstChild);}
+  function handleTick(){tickCount++;tickEl.textContent=tickCount;tickEl.setAttribute('data-tick',tickCount);tickEl.classList.add('pulse');setTimeout(()=>tickEl.classList.remove('pulse'),220);tickMetaEl.textContent='Last tick: '+fmtTime(new Date());logEntry('Tick #'+tickCount+' — signal fired');nextTickAt=Date.now()+currentIntervalMs;}
+  function updateCountdown(){if(!nextTickAt||!endTimestamp)return;const now=Date.now();if(now>=endTimestamp)return;const secsToNext=Math.max(0,Math.ceil((nextTickAt-now)/1000));const secsToEnd=Math.max(0,Math.ceil((endTimestamp-now)/1000));const mins=Math.floor(secsToEnd/60);const secs=secsToEnd%60;nextTickEl.textContent='Next tick in '+secsToNext+'s • Session ends in '+mins+'m '+String(secs).padStart(2,'0')+'s';}
+  function buildWorker(){
+    const workerSource = "let intervalId=null;self.onmessage=function(e){var m=e.data||{};if(m.cmd==='start'){if(intervalId)clearInterval(intervalId);var endTime=m.endTime;var intervalMs=m.intervalMs;intervalId=setInterval(function(){if(Date.now()>=endTime){clearInterval(intervalId);intervalId=null;self.postMessage({type:'done'});return;}self.postMessage({type:'tick',at:Date.now()});},intervalMs);}else if(m.cmd==='stop'){if(intervalId)clearInterval(intervalId);intervalId=null;}};";
+    const blob=new Blob([workerSource],{type:'application/javascript'});
+    const w=new Worker(URL.createObjectURL(blob));
+    w.onmessage=function(e){var m=e.data||{};if(m.type==='tick')handleTick();else if(m.type==='done')finish();};
+    w.onerror=function(err){logEntry('Worker error: '+(err.message||'unknown'));};
+    return w;
+  }
+  function startHeartbeat(){const intervalSec=parseInt(intervalInput.value,10);const durationMin=parseInt(durationInput.value,10);if(!intervalSec||intervalSec<5){alert('Interval must be at least 5 seconds.');return;}if(!durationMin||durationMin<1){alert('Duration must be at least 1 minute.');return;}tickCount=0;tickEl.textContent='0';tickEl.setAttribute('data-tick','0');currentIntervalMs=intervalSec*1000;startTimestamp=Date.now();endTimestamp=startTimestamp+durationMin*60*1000;nextTickAt=Date.now()+currentIntervalMs;statusEl.textContent='Running';statusEl.className='status-value running';tickMetaEl.textContent='Heartbeat started at '+fmtTime(new Date());startBtn.disabled=true;stopBtn.disabled=false;intervalInput.disabled=true;durationInput.disabled=true;logEntry('Heartbeat started (worker-driven) — every '+intervalSec+'s for '+durationMin+'m');if(worker){try{worker.terminate();}catch(e){}}worker=buildWorker();worker.postMessage({cmd:'start',intervalMs:currentIntervalMs,endTime:endTimestamp});countdownIntervalId=setInterval(updateCountdown,1000);updateCountdown();}
+  function stopHeartbeat(){if(worker){try{worker.postMessage({cmd:'stop'});worker.terminate();}catch(e){}worker=null;}if(countdownIntervalId)clearInterval(countdownIntervalId);countdownIntervalId=null;statusEl.textContent='Stopped';statusEl.className='status-value idle';nextTickEl.textContent='';tickMetaEl.textContent='Heartbeat stopped at '+fmtTime(new Date());startBtn.disabled=false;stopBtn.disabled=true;intervalInput.disabled=false;durationInput.disabled=false;logEntry('Heartbeat stopped manually — '+tickCount+' tick(s) fired');}
+  function finish(){if(worker){try{worker.terminate();}catch(e){}worker=null;}if(countdownIntervalId)clearInterval(countdownIntervalId);countdownIntervalId=null;statusEl.textContent='Done';statusEl.className='status-value done';nextTickEl.textContent='';tickMetaEl.textContent='Session complete at '+fmtTime(new Date());startBtn.disabled=false;stopBtn.disabled=true;intervalInput.disabled=false;durationInput.disabled=false;logEntry('Session complete — '+tickCount+' total tick(s)');}
+</script>
+</body>
+</html>
