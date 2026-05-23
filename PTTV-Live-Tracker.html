@@ -1,4 +1,12 @@
 <!-- PTTV-Live-Tracker -->
+<!-- Schema 1.3.0 / Tracker v2.3.0 — Phase I (260523 b): user-aggregation + sibling status board + cross-card navigation -->
+<!--   • USER STATS BADGE: cards with same-handle siblings show a Q·C·S count pill in the card header (e.g. 'Q3·C1·S2'). Hover for total. Click to expand. -->
+<!--   • SIBLINGS SECTION: expanded view now includes '👥 More from @handle' listing all other items from the same user across all columns. Read-only mini-cards. -->
+<!--   • STATUS VOCABULARY INHERITS: each sibling row carries the same aired-highlight / archived-strikethrough / todo-flag treatment as the main card view, at smaller scale. -->
+<!--   • CROSS-COLUMN COLORING: sibling rows keep their origin-column category tint and badge color (purple Q / teal T / gold S). -->
+<!--   • CARD NAVIGATION: click a sibling row to navigate to that card. Switches tab if archived. Smooth scroll into view + 1.5s pulse animation. -->
+<!--   • BACK PILL: single-step navigation breadcrumb ('← back to #390') appears at top of the destination card. Click to return; × to dismiss. -->
+<!--   • PLATFORM EXTRACTION: handles '@user [IG] — text' and '@user [YT] — text' formats. Falls back to plain '@user — text'. Forward-compatible with Genesis v3.5 platform tagging. -->
 <!-- Schema 1.3.0 / Tracker v2.2.0 — Phase H (260523 b): notes field + card expand/collapse -->
 <!--   • SCHEMA 1.3: new per-item .notes field (free-form string, default ''). Backward-compatible normalizeItem reads pre-1.3 items as notes=''. -->
 <!--   • EXPAND: cards can be expanded to reveal a notes textarea. Two triggers: dedicated ▼/▲ button in card-header (right side), OR click on .card-body (with text-selection guard — selection is preserved). -->
@@ -97,6 +105,39 @@
   .notes-textarea { width: 100%; min-height: 60px; padding: 6px 8px; border: 1px solid rgba(0,0,0,0.15); border-radius: 4px; font-family: inherit; font-size: 12px; line-height: 1.5; background-color: rgba(255,255,255,0.7); resize: vertical; box-sizing: border-box; color: #222; }
   .notes-textarea:focus { outline: none; border-color: rgba(0,0,0,0.35); background-color: #fff; }
   .notes-textarea::placeholder { color: #b5b1aa; font-style: italic; }
+  /* Phase I: user-stats badge in card header */
+  .user-stats { font-family: 'SF Mono', Monaco, Menlo, monospace; font-size: 10px; font-weight: 700; color: #555; background-color: rgba(255,255,255,0.7); border: 1px solid rgba(0,0,0,0.15); border-radius: 3px; padding: 1px 5px; letter-spacing: 0.4px; flex-shrink: 0; cursor: pointer; transition: background-color 120ms; }
+  .user-stats:hover { background-color: rgba(255,255,255,1); border-color: rgba(0,0,0,0.3); }
+  /* Phase I: siblings section in expanded view */
+  .siblings-section { margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(0,0,0,0.08); }
+  .siblings-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: #888; font-weight: 600; margin-bottom: 8px; display: block; }
+  .sibling-empty { font-style: italic; color: #aaa; font-size: 11px; padding: 4px 6px; }
+  .sibling-row { display: flex; align-items: flex-start; gap: 6px; padding: 5px 7px; margin-bottom: 4px; border-radius: 4px; cursor: pointer; font-size: 11px; line-height: 1.45; transition: filter 120ms, transform 80ms; }
+  .sibling-row:hover { filter: brightness(0.96); }
+  .sibling-row:active { transform: translateY(1px); }
+  .sibling-row.cat-questions { background-color: #f3edf7; }
+  .sibling-row.cat-comments  { background-color: #e5f0f0; }
+  .sibling-row.cat-shoutouts { background-color: #f9efd9; }
+  .sibling-row.archived-sib { opacity: 0.55; }
+  .sibling-row.archived-sib .sibling-text { text-decoration: line-through; }
+  .sibling-row.aired-sib .sibling-text { background-color: #fff8c4; padding: 0 3px; border-radius: 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+  .sibling-row.todo-sib { box-shadow: inset 3px 0 0 #b85c00; }
+  .sibling-cat-badge { font-family: 'SF Mono', Monaco, Menlo, monospace; font-weight: 700; font-size: 9px; letter-spacing: 0.6px; flex-shrink: 0; padding: 1px 5px; border-radius: 3px; color: #fff; align-self: flex-start; margin-top: 1px; }
+  .sibling-cat-badge.cat-questions { background-color: #7e3a93; }
+  .sibling-cat-badge.cat-comments  { background-color: #1d7373; }
+  .sibling-cat-badge.cat-shoutouts { background-color: #c89211; }
+  .sibling-cardid { font-family: 'SF Mono', Monaco, Menlo, monospace; font-weight: 700; font-size: 10px; color: #555; background-color: rgba(255,255,255,0.8); border: 1px solid rgba(0,0,0,0.12); border-radius: 3px; padding: 0 4px; flex-shrink: 0; align-self: flex-start; margin-top: 1px; letter-spacing: 0.3px; }
+  .sibling-text { flex: 1; color: #333; word-break: break-word; }
+  .sibling-statuses { flex-shrink: 0; display: flex; gap: 4px; align-items: center; align-self: flex-start; margin-top: 1px; font-size: 11px; opacity: 0.85; }
+  /* Phase I: card pulse animation (navigation target indicator) */
+  @keyframes card-pulse-flash { 0% { box-shadow: 0 0 0 0 rgba(200, 146, 17, 0.55); } 60% { box-shadow: 0 0 0 12px rgba(200, 146, 17, 0); } 100% { box-shadow: 0 0 0 0 rgba(200, 146, 17, 0); } }
+  li.card.card-pulse { animation: card-pulse-flash 1.5s ease-out; outline: 2px solid #c89211; outline-offset: 1px; }
+  /* Phase I: back pill (navigation breadcrumb) */
+  .back-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; margin-bottom: 6px; background-color: #fff8e0; border: 1px solid #c89211; border-radius: 12px; font-size: 11px; color: #8a6510; cursor: pointer; transition: background-color 120ms; align-self: flex-start; }
+  .back-pill:hover { background-color: #ffefb8; }
+  .back-pill .arrow { font-weight: 700; font-size: 12px; }
+  .back-pill .close { margin-left: 4px; opacity: 0.6; font-size: 14px; line-height: 1; padding: 0 2px; }
+  .back-pill .close:hover { opacity: 1; }
   .card-header { display: flex; align-items: center; gap: 6px; padding-bottom: 4px; border-bottom: 1px solid rgba(0,0,0,0.06); }
   .card-body { word-break: break-word; }
   input[type="checkbox"] { cursor: pointer; flex-shrink: 0; margin: 0; }
@@ -195,6 +236,69 @@
     items[idx].notes = value;
     save(category, items);
     if (shouldRender || wasEmpty !== isEmpty) render(category);
+  }
+  // Phase I: navigation state (single-step back trail) + pulse cleanup
+  let navigationSource = null;  // { fromCardId, targetCardId, targetCategory, timestamp }
+  let pulseTimeout = null;
+  // Phase I: Extract handle + platform from item text. Handles '@user [IG] — text', '@user [YT] — text', and '@user — text' formats.
+  function extractUserKey(item) {
+    if (!item || !item.text) return { handle: null, platform: null };
+    const dashIdx = item.text.indexOf(' — ');
+    const userPart = dashIdx > -1 ? item.text.slice(0, dashIdx) : item.text;
+    const m = userPart.match(/^(@?[\w.\-_]+)\s*(?:\[(IG|YT)\])?/);
+    if (!m) return { handle: userPart.trim(), platform: null };
+    return { handle: m[1].trim(), platform: m[2] || null };
+  }
+  // Phase I: Find all items by the same handle across all 3 categories. Returns { questions: [], comments: [], shoutouts: [], total }.
+  function findUserItems(handle) {
+    const result = { questions: [], comments: [], shoutouts: [], total: 0 };
+    if (!handle) return result;
+    for (const cat of CATEGORIES) {
+      const items = load(cat);
+      items.forEach((it, idx) => {
+        const key = extractUserKey(it);
+        if (key.handle === handle) { result[cat].push({ item: it, idx: idx, category: cat }); result.total++; }
+      });
+    }
+    return result;
+  }
+  // Phase I: Navigate to a target card by cardId. Switches tab if needed, scrolls into view, applies pulse animation.
+  function navigateToCard(targetCardId, fromCardId) {
+    if (targetCardId === null || targetCardId === undefined) return;
+    let targetCategory = null, targetItem = null;
+    for (const cat of CATEGORIES) {
+      const items = load(cat);
+      const idx = items.findIndex(it => it.cardId === targetCardId);
+      if (idx > -1) { targetCategory = cat; targetItem = items[idx]; break; }
+    }
+    if (!targetCategory) { console.warn('navigateToCard: cardId not found', targetCardId); return; }
+    // Track previous nav target to clear its pill on re-render
+    const prevCategory = navigationSource ? navigationSource.targetCategory : null;
+    // Set new nav source (only if from is provided and different from target)
+    if (fromCardId !== null && fromCardId !== undefined && fromCardId !== targetCardId) {
+      navigationSource = { fromCardId: fromCardId, targetCardId: targetCardId, targetCategory: targetCategory, timestamp: Date.now() };
+    } else {
+      navigationSource = null;
+    }
+    // Switch tab if needed (target may be archived while user is on Active, or vice versa)
+    const needTab = targetItem.archived ? 'archived' : 'active';
+    if (tabState[targetCategory] !== needTab) tabState[targetCategory] = needTab;
+    render(targetCategory);
+    if (prevCategory && prevCategory !== targetCategory) render(prevCategory);
+    // After DOM settles, scroll + pulse
+    setTimeout(() => {
+      const el = document.querySelector('li.card[data-card-id="' + targetCardId + '"]');
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('card-pulse');
+      if (pulseTimeout) clearTimeout(pulseTimeout);
+      pulseTimeout = setTimeout(() => { el.classList.remove('card-pulse'); pulseTimeout = null; }, 1500);
+    }, 60);
+  }
+  function clearNavigationSource() {
+    const cat = navigationSource ? navigationSource.targetCategory : null;
+    navigationSource = null;
+    if (cat) render(cat);
   }
   // v2.1.3: non-sequential 3-digit cardId with collision-retry. Scans all 3 categories for in-use IDs and re-rolls until unique.
   function generateCardId() {
@@ -304,6 +408,24 @@
 
       header.appendChild(cb); header.appendChild(airedBtn); header.appendChild(todoBtn);
 
+      // Phase I: user-stats badge — shows cross-column count if this handle has multiple items
+      const userKey = extractUserKey(item);
+      if (userKey.handle) {
+        const userItems = findUserItems(userKey.handle);
+        if (userItems.total > 1) {
+          const stats = document.createElement('span');
+          stats.className = 'user-stats';
+          const parts = [];
+          if (userItems.questions.length > 0) parts.push('Q' + userItems.questions.length);
+          if (userItems.comments.length  > 0) parts.push('C' + userItems.comments.length);
+          if (userItems.shoutouts.length > 0) parts.push('S' + userItems.shoutouts.length);
+          stats.textContent = parts.join('·');
+          stats.title = userKey.handle + ' has ' + userItems.total + ' items across all columns. Click to expand for full list.';
+          stats.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); toggleExpanded(item.cardId, category); });
+          header.appendChild(stats);
+        }
+      }
+
       // Phase H: notes indicator (only when notes is non-empty)
       const hasNotes = item.notes && item.notes.trim().length > 0;
       if (hasNotes) {
@@ -384,7 +506,98 @@
         ta.addEventListener('blur', () => setNotes(category, idx, ta.value, true));
         exp.appendChild(notesLabel);
         exp.appendChild(ta);
+
+        // Phase I: siblings section — all OTHER items from this same handle across all columns
+        if (userKey.handle) {
+          const allSibs = findUserItems(userKey.handle);
+          const flat = [];
+          for (const sc of CATEGORIES) {
+            allSibs[sc].forEach(s => { if (s.item.cardId !== item.cardId) flat.push({ ...s, displayCat: sc }); });
+          }
+          const sibSection = document.createElement('div');
+          sibSection.className = 'siblings-section';
+          const sibLabel = document.createElement('label');
+          sibLabel.className = 'siblings-label';
+          sibLabel.textContent = '👥 More from ' + userKey.handle + (userKey.platform ? ' [' + userKey.platform + ']' : '') + ' (' + flat.length + ')';
+          sibSection.appendChild(sibLabel);
+          if (flat.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'sibling-empty';
+            empty.textContent = 'No other items from this user yet.';
+            sibSection.appendChild(empty);
+          } else {
+            flat.forEach(sib => {
+              const row = document.createElement('div');
+              row.className = 'sibling-row cat-' + sib.displayCat;
+              if (sib.item.archived) row.classList.add('archived-sib');
+              if (sib.item.aired) row.classList.add('aired-sib');
+              if (sib.item.todo) row.classList.add('todo-sib');
+              row.setAttribute('data-target-card-id', sib.item.cardId);
+              // Category badge
+              const badge = document.createElement('span');
+              badge.className = 'sibling-cat-badge cat-' + sib.displayCat;
+              badge.textContent = sib.displayCat[0].toUpperCase();
+              badge.title = sib.displayCat;
+              row.appendChild(badge);
+              // cardId
+              const cid = document.createElement('span');
+              cid.className = 'sibling-cardid';
+              cid.textContent = (sib.item.cardId !== null && sib.item.cardId !== undefined) ? sib.item.cardId : '?';
+              row.appendChild(cid);
+              // Content (truncated to 80 chars, full on hover)
+              const textSpan = document.createElement('span');
+              textSpan.className = 'sibling-text';
+              const dashI = sib.item.text.indexOf(' — ');
+              const content = dashI > -1 ? sib.item.text.slice(dashI + 3) : sib.item.text;
+              const truncLen = 80;
+              textSpan.textContent = content.length > truncLen ? content.slice(0, truncLen) + '…' : content;
+              textSpan.title = content;
+              row.appendChild(textSpan);
+              // Status indicators
+              const statuses = document.createElement('span');
+              statuses.className = 'sibling-statuses';
+              if (sib.item.aired) {
+                const s = document.createElement('span'); s.textContent = '📺'; s.title = 'Aired (mentioned on-air)'; statuses.appendChild(s);
+              }
+              if (sib.item.archived) {
+                const s = document.createElement('span'); s.textContent = '✓'; s.title = 'Archived'; statuses.appendChild(s);
+              }
+              if (sib.item.todo) {
+                const s = document.createElement('span'); s.textContent = '🚩'; s.title = 'Flagged for team-todos'; statuses.appendChild(s);
+              }
+              row.appendChild(statuses);
+              // Click → navigate
+              row.addEventListener('click', (e) => {
+                e.preventDefault(); e.stopPropagation();
+                navigateToCard(sib.item.cardId, item.cardId);
+              });
+              sibSection.appendChild(row);
+            });
+          }
+          exp.appendChild(sibSection);
+        }
+
         li.appendChild(exp);
+      }
+
+      // Phase I: back pill at top of card if this is the navigation target
+      if (navigationSource && navigationSource.targetCardId === item.cardId && navigationSource.fromCardId !== null && navigationSource.fromCardId !== undefined) {
+        const backPill = document.createElement('div');
+        backPill.className = 'back-pill';
+        const arrow = document.createElement('span'); arrow.className = 'arrow'; arrow.textContent = '←';
+        backPill.appendChild(arrow);
+        backPill.appendChild(document.createTextNode(' back to #' + navigationSource.fromCardId + ' '));
+        const close = document.createElement('span'); close.className = 'close'; close.textContent = '×'; close.title = 'Dismiss';
+        close.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); clearNavigationSource(); });
+        backPill.appendChild(close);
+        backPill.addEventListener('click', (e) => {
+          // Click anywhere except × → navigate back
+          if (e.target.classList.contains('close')) return;
+          e.preventDefault(); e.stopPropagation();
+          const dest = navigationSource.fromCardId;
+          navigateToCard(dest, null);  // null fromCardId → no new back pill on dest
+        });
+        li.insertBefore(backPill, li.firstChild);
       }
 
       list.appendChild(li);
@@ -435,7 +648,7 @@
   function exportJSON() {
     const state = {
       exportedAt: new Date().toISOString(),
-      trackerVersion: '2.2.0',
+      trackerVersion: '2.3.0',
       schemaVersion: '1.3.0',
       questions: load('questions'),
       comments: load('comments'),

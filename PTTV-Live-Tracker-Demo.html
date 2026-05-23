@@ -1,5 +1,5 @@
 <!-- PTTV-Live-Tracker-Demo -->
-<!-- Schema 1.3.0 / Tracker v2.2.0 — DEMO HARNESS (260523 b: + Phase H notes field + card expand/collapse + autosave textarea) -->
+<!-- Schema 1.3.0 / Tracker v2.3.0 — DEMO HARNESS (260523 b: + Phase I user-aggregation, sibling status board, card navigation; demo data updated with cross-column users and [IG]/[YT] platform tags) -->
 <!--   • Identical code paths to production PTTV-Live-Tracker.html, but uses ISOLATED localStorage keys (pttv_demo_*) -->
 <!--   • Open in any browser — no Chrome extension or live show required -->
 <!--   • Demo control bar at top: Load 10/25/40 mock items + Clear demo data + Show schema sample -->
@@ -78,6 +78,39 @@
   .notes-textarea { width: 100%; min-height: 60px; padding: 6px 8px; border: 1px solid rgba(0,0,0,0.15); border-radius: 4px; font-family: inherit; font-size: 12px; line-height: 1.5; background-color: rgba(255,255,255,0.7); resize: vertical; box-sizing: border-box; color: #222; }
   .notes-textarea:focus { outline: none; border-color: rgba(0,0,0,0.35); background-color: #fff; }
   .notes-textarea::placeholder { color: #b5b1aa; font-style: italic; }
+  /* Phase I: user-stats badge in card header */
+  .user-stats { font-family: 'SF Mono', Monaco, Menlo, monospace; font-size: 10px; font-weight: 700; color: #555; background-color: rgba(255,255,255,0.7); border: 1px solid rgba(0,0,0,0.15); border-radius: 3px; padding: 1px 5px; letter-spacing: 0.4px; flex-shrink: 0; cursor: pointer; transition: background-color 120ms; }
+  .user-stats:hover { background-color: rgba(255,255,255,1); border-color: rgba(0,0,0,0.3); }
+  /* Phase I: siblings section in expanded view */
+  .siblings-section { margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(0,0,0,0.08); }
+  .siblings-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: #888; font-weight: 600; margin-bottom: 8px; display: block; }
+  .sibling-empty { font-style: italic; color: #aaa; font-size: 11px; padding: 4px 6px; }
+  .sibling-row { display: flex; align-items: flex-start; gap: 6px; padding: 5px 7px; margin-bottom: 4px; border-radius: 4px; cursor: pointer; font-size: 11px; line-height: 1.45; transition: filter 120ms, transform 80ms; }
+  .sibling-row:hover { filter: brightness(0.96); }
+  .sibling-row:active { transform: translateY(1px); }
+  .sibling-row.cat-questions { background-color: #f3edf7; }
+  .sibling-row.cat-comments  { background-color: #e5f0f0; }
+  .sibling-row.cat-shoutouts { background-color: #f9efd9; }
+  .sibling-row.archived-sib { opacity: 0.55; }
+  .sibling-row.archived-sib .sibling-text { text-decoration: line-through; }
+  .sibling-row.aired-sib .sibling-text { background-color: #fff8c4; padding: 0 3px; border-radius: 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+  .sibling-row.todo-sib { box-shadow: inset 3px 0 0 #b85c00; }
+  .sibling-cat-badge { font-family: 'SF Mono', Monaco, Menlo, monospace; font-weight: 700; font-size: 9px; letter-spacing: 0.6px; flex-shrink: 0; padding: 1px 5px; border-radius: 3px; color: #fff; align-self: flex-start; margin-top: 1px; }
+  .sibling-cat-badge.cat-questions { background-color: #7e3a93; }
+  .sibling-cat-badge.cat-comments  { background-color: #1d7373; }
+  .sibling-cat-badge.cat-shoutouts { background-color: #c89211; }
+  .sibling-cardid { font-family: 'SF Mono', Monaco, Menlo, monospace; font-weight: 700; font-size: 10px; color: #555; background-color: rgba(255,255,255,0.8); border: 1px solid rgba(0,0,0,0.12); border-radius: 3px; padding: 0 4px; flex-shrink: 0; align-self: flex-start; margin-top: 1px; letter-spacing: 0.3px; }
+  .sibling-text { flex: 1; color: #333; word-break: break-word; }
+  .sibling-statuses { flex-shrink: 0; display: flex; gap: 4px; align-items: center; align-self: flex-start; margin-top: 1px; font-size: 11px; opacity: 0.85; }
+  /* Phase I: card pulse animation (navigation target indicator) */
+  @keyframes card-pulse-flash { 0% { box-shadow: 0 0 0 0 rgba(200, 146, 17, 0.55); } 60% { box-shadow: 0 0 0 12px rgba(200, 146, 17, 0); } 100% { box-shadow: 0 0 0 0 rgba(200, 146, 17, 0); } }
+  li.card.card-pulse { animation: card-pulse-flash 1.5s ease-out; outline: 2px solid #c89211; outline-offset: 1px; }
+  /* Phase I: back pill (navigation breadcrumb) */
+  .back-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; margin-bottom: 6px; background-color: #fff8e0; border: 1px solid #c89211; border-radius: 12px; font-size: 11px; color: #8a6510; cursor: pointer; transition: background-color 120ms; align-self: flex-start; }
+  .back-pill:hover { background-color: #ffefb8; }
+  .back-pill .arrow { font-weight: 700; font-size: 12px; }
+  .back-pill .close { margin-left: 4px; opacity: 0.6; font-size: 14px; line-height: 1; padding: 0 2px; }
+  .back-pill .close:hover { opacity: 1; }
   .card-header { display: flex; align-items: center; gap: 6px; padding-bottom: 4px; border-bottom: 1px solid rgba(0,0,0,0.06); }
   .card-body { word-break: break-word; }
   input[type="checkbox"] { cursor: pointer; flex-shrink: 0; margin: 0; }
@@ -195,6 +228,69 @@
     save(category, items);
     if (shouldRender || wasEmpty !== isEmpty) render(category);
   }
+  // Phase I: navigation state (single-step back trail) + pulse cleanup
+  let navigationSource = null;  // { fromCardId, targetCardId, targetCategory, timestamp }
+  let pulseTimeout = null;
+  // Phase I: Extract handle + platform from item text. Handles '@user [IG] — text', '@user [YT] — text', and '@user — text' formats.
+  function extractUserKey(item) {
+    if (!item || !item.text) return { handle: null, platform: null };
+    const dashIdx = item.text.indexOf(' — ');
+    const userPart = dashIdx > -1 ? item.text.slice(0, dashIdx) : item.text;
+    const m = userPart.match(/^(@?[\w.\-_]+)\s*(?:\[(IG|YT)\])?/);
+    if (!m) return { handle: userPart.trim(), platform: null };
+    return { handle: m[1].trim(), platform: m[2] || null };
+  }
+  // Phase I: Find all items by the same handle across all 3 categories. Returns { questions: [], comments: [], shoutouts: [], total }.
+  function findUserItems(handle) {
+    const result = { questions: [], comments: [], shoutouts: [], total: 0 };
+    if (!handle) return result;
+    for (const cat of CATEGORIES) {
+      const items = load(cat);
+      items.forEach((it, idx) => {
+        const key = extractUserKey(it);
+        if (key.handle === handle) { result[cat].push({ item: it, idx: idx, category: cat }); result.total++; }
+      });
+    }
+    return result;
+  }
+  // Phase I: Navigate to a target card by cardId. Switches tab if needed, scrolls into view, applies pulse animation.
+  function navigateToCard(targetCardId, fromCardId) {
+    if (targetCardId === null || targetCardId === undefined) return;
+    let targetCategory = null, targetItem = null;
+    for (const cat of CATEGORIES) {
+      const items = load(cat);
+      const idx = items.findIndex(it => it.cardId === targetCardId);
+      if (idx > -1) { targetCategory = cat; targetItem = items[idx]; break; }
+    }
+    if (!targetCategory) { console.warn('navigateToCard: cardId not found', targetCardId); return; }
+    // Track previous nav target to clear its pill on re-render
+    const prevCategory = navigationSource ? navigationSource.targetCategory : null;
+    // Set new nav source (only if from is provided and different from target)
+    if (fromCardId !== null && fromCardId !== undefined && fromCardId !== targetCardId) {
+      navigationSource = { fromCardId: fromCardId, targetCardId: targetCardId, targetCategory: targetCategory, timestamp: Date.now() };
+    } else {
+      navigationSource = null;
+    }
+    // Switch tab if needed (target may be archived while user is on Active, or vice versa)
+    const needTab = targetItem.archived ? 'archived' : 'active';
+    if (tabState[targetCategory] !== needTab) tabState[targetCategory] = needTab;
+    render(targetCategory);
+    if (prevCategory && prevCategory !== targetCategory) render(prevCategory);
+    // After DOM settles, scroll + pulse
+    setTimeout(() => {
+      const el = document.querySelector('li.card[data-card-id="' + targetCardId + '"]');
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('card-pulse');
+      if (pulseTimeout) clearTimeout(pulseTimeout);
+      pulseTimeout = setTimeout(() => { el.classList.remove('card-pulse'); pulseTimeout = null; }, 1500);
+    }, 60);
+  }
+  function clearNavigationSource() {
+    const cat = navigationSource ? navigationSource.targetCategory : null;
+    navigationSource = null;
+    if (cat) render(cat);
+  }
   // v2.1.3: non-sequential 3-digit cardId with collision-retry. Scans all 3 categories for in-use IDs and re-rolls until unique.
   function generateCardId() {
     const inUse = new Set();
@@ -303,6 +399,24 @@
 
       header.appendChild(cb); header.appendChild(airedBtn); header.appendChild(todoBtn);
 
+      // Phase I: user-stats badge — shows cross-column count if this handle has multiple items
+      const userKey = extractUserKey(item);
+      if (userKey.handle) {
+        const userItems = findUserItems(userKey.handle);
+        if (userItems.total > 1) {
+          const stats = document.createElement('span');
+          stats.className = 'user-stats';
+          const parts = [];
+          if (userItems.questions.length > 0) parts.push('Q' + userItems.questions.length);
+          if (userItems.comments.length  > 0) parts.push('C' + userItems.comments.length);
+          if (userItems.shoutouts.length > 0) parts.push('S' + userItems.shoutouts.length);
+          stats.textContent = parts.join('·');
+          stats.title = userKey.handle + ' has ' + userItems.total + ' items across all columns. Click to expand for full list.';
+          stats.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); toggleExpanded(item.cardId, category); });
+          header.appendChild(stats);
+        }
+      }
+
       // Phase H: notes indicator (only when notes is non-empty)
       const hasNotes = item.notes && item.notes.trim().length > 0;
       if (hasNotes) {
@@ -383,7 +497,98 @@
         ta.addEventListener('blur', () => setNotes(category, idx, ta.value, true));
         exp.appendChild(notesLabel);
         exp.appendChild(ta);
+
+        // Phase I: siblings section — all OTHER items from this same handle across all columns
+        if (userKey.handle) {
+          const allSibs = findUserItems(userKey.handle);
+          const flat = [];
+          for (const sc of CATEGORIES) {
+            allSibs[sc].forEach(s => { if (s.item.cardId !== item.cardId) flat.push({ ...s, displayCat: sc }); });
+          }
+          const sibSection = document.createElement('div');
+          sibSection.className = 'siblings-section';
+          const sibLabel = document.createElement('label');
+          sibLabel.className = 'siblings-label';
+          sibLabel.textContent = '👥 More from ' + userKey.handle + (userKey.platform ? ' [' + userKey.platform + ']' : '') + ' (' + flat.length + ')';
+          sibSection.appendChild(sibLabel);
+          if (flat.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'sibling-empty';
+            empty.textContent = 'No other items from this user yet.';
+            sibSection.appendChild(empty);
+          } else {
+            flat.forEach(sib => {
+              const row = document.createElement('div');
+              row.className = 'sibling-row cat-' + sib.displayCat;
+              if (sib.item.archived) row.classList.add('archived-sib');
+              if (sib.item.aired) row.classList.add('aired-sib');
+              if (sib.item.todo) row.classList.add('todo-sib');
+              row.setAttribute('data-target-card-id', sib.item.cardId);
+              // Category badge
+              const badge = document.createElement('span');
+              badge.className = 'sibling-cat-badge cat-' + sib.displayCat;
+              badge.textContent = sib.displayCat[0].toUpperCase();
+              badge.title = sib.displayCat;
+              row.appendChild(badge);
+              // cardId
+              const cid = document.createElement('span');
+              cid.className = 'sibling-cardid';
+              cid.textContent = (sib.item.cardId !== null && sib.item.cardId !== undefined) ? sib.item.cardId : '?';
+              row.appendChild(cid);
+              // Content (truncated to 80 chars, full on hover)
+              const textSpan = document.createElement('span');
+              textSpan.className = 'sibling-text';
+              const dashI = sib.item.text.indexOf(' — ');
+              const content = dashI > -1 ? sib.item.text.slice(dashI + 3) : sib.item.text;
+              const truncLen = 80;
+              textSpan.textContent = content.length > truncLen ? content.slice(0, truncLen) + '…' : content;
+              textSpan.title = content;
+              row.appendChild(textSpan);
+              // Status indicators
+              const statuses = document.createElement('span');
+              statuses.className = 'sibling-statuses';
+              if (sib.item.aired) {
+                const s = document.createElement('span'); s.textContent = '📺'; s.title = 'Aired (mentioned on-air)'; statuses.appendChild(s);
+              }
+              if (sib.item.archived) {
+                const s = document.createElement('span'); s.textContent = '✓'; s.title = 'Archived'; statuses.appendChild(s);
+              }
+              if (sib.item.todo) {
+                const s = document.createElement('span'); s.textContent = '🚩'; s.title = 'Flagged for team-todos'; statuses.appendChild(s);
+              }
+              row.appendChild(statuses);
+              // Click → navigate
+              row.addEventListener('click', (e) => {
+                e.preventDefault(); e.stopPropagation();
+                navigateToCard(sib.item.cardId, item.cardId);
+              });
+              sibSection.appendChild(row);
+            });
+          }
+          exp.appendChild(sibSection);
+        }
+
         li.appendChild(exp);
+      }
+
+      // Phase I: back pill at top of card if this is the navigation target
+      if (navigationSource && navigationSource.targetCardId === item.cardId && navigationSource.fromCardId !== null && navigationSource.fromCardId !== undefined) {
+        const backPill = document.createElement('div');
+        backPill.className = 'back-pill';
+        const arrow = document.createElement('span'); arrow.className = 'arrow'; arrow.textContent = '←';
+        backPill.appendChild(arrow);
+        backPill.appendChild(document.createTextNode(' back to #' + navigationSource.fromCardId + ' '));
+        const close = document.createElement('span'); close.className = 'close'; close.textContent = '×'; close.title = 'Dismiss';
+        close.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); clearNavigationSource(); });
+        backPill.appendChild(close);
+        backPill.addEventListener('click', (e) => {
+          // Click anywhere except × → navigate back
+          if (e.target.classList.contains('close')) return;
+          e.preventDefault(); e.stopPropagation();
+          const dest = navigationSource.fromCardId;
+          navigateToCard(dest, null);  // null fromCardId → no new back pill on dest
+        });
+        li.insertBefore(backPill, li.firstChild);
       }
 
       list.appendChild(li);
@@ -434,7 +639,7 @@
   function exportJSON() {
     const state = {
       exportedAt: new Date().toISOString(),
-      trackerVersion: '2.2.0',
+      trackerVersion: '2.3.0',
       schemaVersion: '1.3.0',
       questions: load('questions'),
       comments: load('comments'),
@@ -466,50 +671,50 @@
 
   // ─── DEMO HARNESS DATA + CONTROLS ─────────────────────────────────────────
   const DEMO_QUESTIONS = [
-  "@artistmom_42 \u2014 When's the next sale launch? Saving up for the Mimi bag!",
-  "@kp_collects \u2014 Will you restock the leopard Zoe? Been on the wait list forever",
-  "@thatch_obsessed \u2014 Irene, what's your favorite pairing for the Charlie tote in winter?",
-  "@new_to_pt_2024 \u2014 First time tuning in! How does the Buddy crossbody fit a Macbook Air?",
-  "@daily_carrier \u2014 Does the Daily come in the same brown as Jane?",
-  "@small_collector \u2014 Are you going to do another tassel sale? Need one in olive",
-  "@parker_too \u2014 What's the difference between Maurice and the sidekick clutch?",
-  "@studio_lover \u2014 Will there be a new collab this fall? Loved last year's",
-  "@first_purchase \u2014 Should I size up on the Jack or stay true to size?",
-  "@bag_questioner \u2014 Question for Irene \u2014 leather vs canvas for daily use? Pros and cons?",
-  "@returning_customer \u2014 Are the new monogram options going to come back in stock soon?",
-  "@curious_carl \u2014 What's the lining made of on the Mimi? Mine is starting to wear",
-  "@vip_24 \u2014 When do you announce the holiday collection drop?"
+  "@artistmom_42 [IG] \u2014 When's the next sale launch? Saving up for the Mimi bag!",
+  "@kp_collects [YT] \u2014 Will you restock the leopard Zoe? Been on the wait list forever",
+  "@thatch_obsessed [IG] \u2014 Irene, what's your favorite pairing for the Charlie tote in winter?",
+  "@new_to_pt_2024 [YT] \u2014 First time tuning in! How does the Buddy crossbody fit a Macbook Air?",
+  "@daily_carrier [IG] \u2014 Does the Daily come in the same brown as Jane?",
+  "@small_collector [IG] \u2014 Are you going to do another tassel sale? Need one in olive",
+  "@parker_too [YT] \u2014 What's the difference between Maurice and the sidekick clutch?",
+  "@studio_lover [IG] \u2014 Will there be a new collab this fall? Loved last year's",
+  "@first_purchase [IG] \u2014 Should I size up on the Jack or stay true to size?",
+  "@bag_questioner [YT] \u2014 Question for Irene \u2014 leather vs canvas for daily use? Pros and cons?",
+  "@returning_customer [IG] \u2014 Are the new monogram options going to come back in stock soon?",
+  "@curious_carl [IG] \u2014 What's the lining made of on the Mimi? Mine is starting to wear",
+  "@vip_24 [YT] \u2014 When do you announce the holiday collection drop?"
 ];
   const DEMO_COMMENTS = [
-  "@love_pt_designs \u2014 Just got my Zoe yesterday and I'm OBSESSED, thank you team!",
-  "@designer_at_heart \u2014 Your styling videos always inspire me to use my bags differently",
-  "@longtime_fan \u2014 Watching you and Irene chat is the highlight of my week tbh",
-  "@bagcollector99 \u2014 The new gold hardware is *chef's kiss*",
-  "@daily_show_viewer \u2014 Parker your camera setup looks great today, much better lighting",
-  "@kpop_thatch \u2014 Charlie + new wallet combo is perfection for fall",
-  "@nyc_to_dallas \u2014 Streaming this from my office break \u2014 y'all keep me sane on Wednesdays",
-  "@gift_giver \u2014 Bought one for my mom for her birthday \u2014 she sent me 5 thank-you texts",
-  "@brand_loyal \u2014 It's so cool you're doing these lives, makes the brand feel so personal",
-  "@product_obsessed \u2014 The way you photograph the leather always makes me want to buy more",
-  "@just_a_lurker \u2014 Lurking from work, the new Jack design is fantastic"
+  "@love_pt_designs [IG] \u2014 Just got my Zoe yesterday and I'm OBSESSED, thank you team!",
+  "@artistmom_42 [IG] \u2014 The new gold hardware on Mimi is *chef's kiss*",
+  "@thatch_obsessed [IG] \u2014 Watching you and Irene chat is the highlight of my week tbh",
+  "@bagcollector99 [YT] \u2014 Charlie + new wallet combo is perfection for fall",
+  "@daily_show_viewer [YT] \u2014 Parker your camera setup looks great today, much better lighting",
+  "@nashville_nights [IG] \u2014 Streaming this from my office break \u2014 y'all keep me sane on Wednesdays",
+  "@gift_giver [IG] \u2014 Bought one for my mom for her birthday \u2014 she sent me 5 thank-you texts",
+  "@brand_loyal [IG] \u2014 It's so cool you're doing these lives, makes the brand feel so personal",
+  "@product_obsessed [YT] \u2014 The way you photograph the leather always makes me want to buy more",
+  "@just_a_lurker [IG] \u2014 Lurking from work, the new Jack design is fantastic",
+  "@designer_at_heart [IG] \u2014 Your styling videos always inspire me to use my bags differently"
 ];
   const DEMO_SHOUTOUTS = [
-  "@phoenix_party \u2014 Tuning in from Phoenix Arizona, love you guys!",
-  "@bostoncommongirl \u2014 Boston represent! Watching while walking the common",
-  "@brooklyn_in_house \u2014 Brooklyn brownstone tuning in",
-  "@nashville_nights \u2014 Nashville Tennessee in the house!",
-  "@portland_or_rep \u2014 Portland Oregon \u2014 love the rain love the show",
-  "@chicago_loop \u2014 Chicago checking in! It's freezing here but Mimi keeps me happy",
-  "@miami_beach_fan \u2014 Miami Beach watching from the balcony",
-  "@austin_texas_mom \u2014 Austin TX mom of 3 \u2014 these lives are my me-time",
-  "@dallas_designer \u2014 Dallas Texas! Question for Irene \u2014 see Q list",
-  "@seattle_grunge \u2014 Seattle Washington, can't wait for the next drop",
-  "@denver_mountains \u2014 Denver Colorado, snow day so I'm here!",
-  "@london_uk_fan \u2014 London UK, staying up late for y'all",
-  "@paris_fashion \u2014 Paris France, bonjour from le marais!",
-  "@toronto_canada_eh \u2014 Toronto Canada, eh!",
-  "@scottsdale_az \u2014 Scottsdale Arizona checking in!",
-  "@charleston_sc \u2014 Charleston SC, the new gold is gorgeous"
+  "@phoenix_party [IG] \u2014 Tuning in from Phoenix Arizona, love you guys!",
+  "@artistmom_42 [IG] \u2014 Scottsdale represent \u2014 watching with my coffee",
+  "@brooklyn_in_house [YT] \u2014 Brooklyn brownstone tuning in",
+  "@nashville_nights [IG] \u2014 Nashville Tennessee in the house!",
+  "@portland_or_rep [IG] \u2014 Portland Oregon \u2014 love the rain love the show",
+  "@kp_collects [YT] \u2014 Atlanta GA representing! Still holding out for the Zoe restock",
+  "@miami_beach_fan [IG] \u2014 Miami Beach watching from the balcony",
+  "@austin_texas_mom [YT] \u2014 Austin TX mom of 3 \u2014 these lives are my me-time",
+  "@dallas_designer [IG] \u2014 Dallas Texas! Question for Irene \u2014 see Q list",
+  "@seattle_grunge [YT] \u2014 Seattle Washington, can't wait for the next drop",
+  "@denver_mountains [IG] \u2014 Denver Colorado, snow day so I'm here!",
+  "@london_uk_fan [IG] \u2014 London UK, staying up late for y'all",
+  "@vip_24 [YT] \u2014 NYC tuning in for the holiday news!",
+  "@toronto_canada_eh [YT] \u2014 Toronto Canada, eh!",
+  "@scottsdale_az [IG] \u2014 Scottsdale Arizona checking in!",
+  "@charleston_sc [IG] \u2014 Charleston SC, the new gold is gorgeous"
 ];
   function loadMockData(count) {
     // Clear existing demo data first to make repeated loads deterministic
@@ -531,7 +736,7 @@
     // Build a one-item sample showing the full Schema 1.2 shape
     const sample = {
       exportedAt: new Date().toISOString(),
-      trackerVersion: '2.2.0',
+      trackerVersion: '2.3.0',
       schemaVersion: '1.3.0',
       questions: [{ text: '@sampleuser — sample question here', checked: false, archived: false, aired: true, todo: true, firstSeenAt: new Date().toISOString(), cardId: 427, notes: 'addressed on-air; she also asked about lining material — see card #519' }],
       comments: [],
