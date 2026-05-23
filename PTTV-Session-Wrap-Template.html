@@ -1,0 +1,160 @@
+<!-- PTTV-Session-Wrap-Template — canonical, lives in 260522-pttv-runtime public repo. -->
+<!-- The Genesis end-of-session ritual fetches this raw, substitutes placeholders __SESSION_DATE__ and __SESSION_ITEMS_JSON__, and triggers download. -->
+<!-- Placeholders: -->
+<!--   __SESSION_DATE__         → today's YYMMDD (e.g. 260523) — appears in title, filename, storage key, and session-meta line -->
+<!--   __SESSION_ITEMS_JSON__   → JSON array of session-specific items to append after the 7 defaults. Empty array if none. Each entry: { id, title, meta, type } where type MUST be "session" (renders with orange left-border per VISUAL CONVENTIONS). -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PTTV Session Wrap — __SESSION_DATE__</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #faf8f5; color: #222; padding: 32px 24px; max-width: 720px; margin: 0 auto; min-height: 100vh; line-height: 1.5; }
+  h1 { font-size: 22px; margin-bottom: 4px; letter-spacing: -0.3px; }
+  .subtitle { color: #888; font-size: 13px; margin-bottom: 24px; line-height: 1.5; }
+  .subtitle code { background: #f0ebe2; padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+  .session-meta { font-size: 12px; color: #666; margin-bottom: 20px; padding: 10px 14px; background: #fff; border: 1px solid #e5e0d8; border-radius: 8px; }
+  .session-meta .label { font-weight: 600; color: #444; margin-right: 6px; }
+  .progress-bar { height: 6px; background: #f0ebe2; border-radius: 3px; overflow: hidden; margin: 16px 0 24px; }
+  .progress-fill { height: 100%; background: #2a7; transition: width 240ms ease-out; }
+  .progress-text { font-size: 12px; color: #888; margin-bottom: 8px; font-variant-numeric: tabular-nums; }
+  .section-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: #888; margin: 24px 0 8px; padding-bottom: 6px; border-bottom: 1px solid #e5e0d8; }
+  .section-title:first-of-type { margin-top: 0; }
+  .item { background: #fff; border: 1px solid #e5e0d8; border-radius: 8px; padding: 12px 14px; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 12px; cursor: pointer; transition: background 120ms; }
+  .item:hover { background: #fdfaf3; }
+  .item input[type="checkbox"] { margin-top: 2px; cursor: pointer; flex-shrink: 0; width: 18px; height: 18px; accent-color: #b85c00; }
+  .item .body { flex: 1; font-size: 14px; }
+  .item .body .meta { display: block; font-size: 12px; color: #888; margin-top: 3px; }
+  .item.done .body, .item.done .body .meta { text-decoration: line-through; color: #bbb; }
+  .item.session-specific { border-left: 3px solid #b85c00; }
+  .actions { margin-top: 28px; padding-top: 20px; border-top: 1px solid #e5e0d8; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  button { padding: 9px 16px; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; transition: background 120ms; }
+  button.primary { background: #2a7; color: #fff; }
+  button.primary:hover { background: #229960; }
+  button.secondary { background: #36a; color: #fff; }
+  button.secondary:hover { background: #4178c4; }
+  button.danger { background: #c33; color: #fff; }
+  button.danger:hover { background: #e44; }
+  button.copied { background: #888; }
+  .action-status { font-size: 12px; color: #888; margin-left: auto; }
+</style>
+</head>
+<body>
+<h1>📋 PTTV Session Wrap — __SESSION_DATE__</h1>
+<div class="subtitle">Post-session checklist. Checks save to <code>localStorage</code> automatically (persist across reopens). Click <strong>💾 Save snapshot</strong> for a durable downloadable copy with checks baked in.</div>
+<div class="session-meta">
+  <span class="label">Session date:</span> __SESSION_DATE__
+  &nbsp;·&nbsp;
+  <span class="label">Storage key:</span> <code>pttv_session_wrap___SESSION_DATE__</code>
+  &nbsp;·&nbsp;
+  <span class="label">Items:</span> <span id="item-count">0</span>
+</div>
+<div class="progress-text" id="progress-text">0 of 0 done</div>
+<div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width: 0%"></div></div>
+<div id="default-section" class="section-title">Default wrap-up items</div>
+<div id="default-items"></div>
+<div id="session-section" class="section-title" style="display: none;">Session-specific items (from today's run)</div>
+<div id="session-items"></div>
+<div class="actions">
+  <button class="primary" onclick="saveSnapshot()">💾 Save snapshot</button>
+  <button class="secondary" onclick="copyMarkdown()" id="copy-btn">📋 Copy as markdown</button>
+  <button class="danger" onclick="resetChecks()">↺ Reset</button>
+  <span class="action-status" id="action-status"></span>
+</div>
+<script>
+  const SESSION_DATE = "__SESSION_DATE__";
+  const STORAGE_KEY = "pttv_session_wrap_" + SESSION_DATE;
+  const DEFAULT_ITEMS = [
+    { id: "save-tracker",        title: "Save tracker JSON locally outside the project",       meta: "Drag pttv-tracker-state-*.json to your local PTTV folder, Google Drive, or wherever you keep ongoing records", type: "default" },
+    { id: "save-archive",        title: "Save merged archive locally outside the project",     meta: "Same idea for the new PTTV-Archive.json — schemaVersion 1.3 now includes archived, firstSeenAt, cardId, and notes per item", type: "default" },
+    { id: "upload-archive",      title: "Upload merged archive to project Files",              meta: "claude.ai → PTTV project → Files → upload the new archive (filename PTTV-Archive.json, version is in the file content, not the filename)", type: "default" },
+    { id: "delete-old-archive",  title: "Delete previous archive from project Files",          meta: "Same Files panel — remove the older PTTV-Archive.json (if a stale duplicate exists) to avoid drift. With filename versioning killed, the new file overwrites in place.", type: "default" },
+    { id: "session-notes",       title: "Add session notes to project if anything noteworthy", meta: "Optional. New issues, lessons learned, ideas for next release", type: "default" },
+    { id: "next-week",           title: "Confirm next live show is on the calendar",           meta: "Lock in the slot for the next session", type: "default" },
+    { id: "close-tabs",          title: "Close all the live-session browser tabs",             meta: "IG live, YT watch, tracker, heartbeat — clean slate for next time", type: "default" }
+  ];
+  // Session-specific items injected by the Genesis at runtime (or empty array if none)
+  const SESSION_ITEMS = __SESSION_ITEMS_JSON__;
+  const ITEMS = DEFAULT_ITEMS.concat(SESSION_ITEMS);
+  function loadChecks() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); } catch (e) { return {}; } }
+  function saveChecks(state) { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+  function renderItems() {
+    const state = loadChecks();
+    const defaultRoot = document.getElementById("default-items");
+    const sessionRoot = document.getElementById("session-items");
+    defaultRoot.innerHTML = ""; sessionRoot.innerHTML = "";
+    let hasSession = false;
+    ITEMS.forEach(item => {
+      const div = document.createElement("div");
+      div.className = "item" + (item.type === "session" ? " session-specific" : "");
+      div.dataset.id = item.id;
+      const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!state[item.id];
+      const body = document.createElement("div"); body.className = "body";
+      body.appendChild(document.createTextNode(item.title));
+      if (item.meta) { const m = document.createElement("span"); m.className = "meta"; m.textContent = item.meta; body.appendChild(m); }
+      div.appendChild(cb); div.appendChild(body);
+      if (state[item.id]) div.classList.add("done");
+      div.addEventListener("click", (e) => { if (e.target.tagName === "INPUT") return; cb.checked = !cb.checked; cb.dispatchEvent(new Event("change")); });
+      cb.addEventListener("change", (e) => { const s = loadChecks(); s[item.id] = e.target.checked; saveChecks(s); render(); });
+      (item.type === "session" ? sessionRoot : defaultRoot).appendChild(div);
+      if (item.type === "session") hasSession = true;
+    });
+    document.getElementById("session-section").style.display = hasSession ? "" : "none";
+    document.getElementById("item-count").textContent = ITEMS.length;
+  }
+  function render() {
+    renderItems();
+    const state = loadChecks();
+    const done = ITEMS.filter(i => state[i.id]).length;
+    const total = ITEMS.length;
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    document.getElementById("progress-text").textContent = done + " of " + total + " done";
+    document.getElementById("progress-fill").style.width = pct + "%";
+  }
+  function saveSnapshot() {
+    const state = loadChecks();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(document.documentElement.outerHTML, "text/html");
+    doc.querySelectorAll(".item").forEach(item => {
+      const id = item.dataset.id; const cb = item.querySelector("input[type=checkbox]");
+      if (state[id]) { cb.setAttribute("checked", "checked"); item.classList.add("done"); }
+      else { cb.removeAttribute("checked"); item.classList.remove("done"); }
+    });
+    const bootstrap = doc.createElement("script");
+    bootstrap.textContent = "(function(){try{var k='" + STORAGE_KEY + "';if(!localStorage.getItem(k)){var s={};document.querySelectorAll('.item').forEach(function(it){var cb=it.querySelector('input[type=checkbox]');if(cb&&cb.hasAttribute('checked'))s[it.dataset.id]=true;});localStorage.setItem(k,JSON.stringify(s));}}catch(e){}})();";
+    doc.head.appendChild(bootstrap);
+    const out = "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
+    const blob = new Blob([out], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const done = ITEMS.filter(i => state[i.id]).length;
+    a.href = url;
+    a.download = "PTTV-Session-Wrap-" + SESSION_DATE + "-" + done + "-of-" + ITEMS.length + "-done.html";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    flashStatus("Snapshot downloaded.");
+  }
+  function copyMarkdown() {
+    const state = loadChecks();
+    const lines = ["# PTTV Session Wrap — " + SESSION_DATE, ""];
+    ITEMS.forEach(item => {
+      const box = state[item.id] ? "[x]" : "[ ]";
+      lines.push("- " + box + " " + item.title + (item.type === "session" ? " (session-specific)" : ""));
+    });
+    const text = lines.join("\n");
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById("copy-btn");
+        btn.classList.add("copied"); btn.textContent = "✓ Copied";
+        setTimeout(() => { btn.classList.remove("copied"); btn.textContent = "📋 Copy as markdown"; }, 2000);
+        flashStatus("Markdown copied.");
+      });
+    } else { flashStatus("Clipboard unavailable."); }
+  }
+  function resetChecks() { if (!confirm("Reset all checks?")) return; localStorage.removeItem(STORAGE_KEY); render(); flashStatus("Reset."); }
+  function flashStatus(msg) { const el = document.getElementById("action-status"); el.textContent = msg; setTimeout(() => { el.textContent = ""; }, 3000); }
+  render();
+</script>
+</body>
+</html>
