@@ -1,0 +1,392 @@
+<!-- PTTV-Live-Tracker-Demo -->
+<!-- Schema 1.2 / Tracker v2.1 — DEMO HARNESS for smoke-testing Schema 1.2 without a live show -->
+<!--   • Identical code paths to production PTTV-Live-Tracker.html, but uses ISOLATED localStorage keys (pttv_demo_*) -->
+<!--   • Open in any browser — no Chrome extension or live show required -->
+<!--   • Demo control bar at top: Load 10/25/40 mock items + Clear demo data + Show schema sample -->
+<!--   • Mock dataset includes: 13 questions, 11 comments, 16 shoutouts (geographic mentions) — 40 total -->
+<!--   • Suggested test flow: Load 25 items → toggle aired on 5 → flag 3 as todo → archive 4 → check Archive tab → export JSON → verify Schema 1.2 shape -->
+<!--   • SYNC NOTE: when production tracker changes, this file needs the same updates manually (only differences: localStorage keys + demo bar) -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PTTV Tracker DEMO — Schema 1.2 smoke test</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #faf8f5; color: #222; margin: 0; padding: 24px; max-width: 1100px; margin: 0 auto; }
+  h1 { margin: 0 0 8px 0; font-size: 24px; }
+  .subtitle { color: #888; font-size: 13px; margin-bottom: 24px; line-height: 1.5; }
+  .subtitle code { background: #f0ebe2; padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+  .controls { display: flex; gap: 10px; margin-bottom: 24px; flex-wrap: wrap; }
+  .controls button { padding: 8px 14px; background: #333; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit; transition: background 120ms; }
+  .controls button:hover { background: #555; }
+  .controls button.archive-bulk { background: #b85c00; }
+  .controls button.archive-bulk:hover { background: #d06a00; }
+  .controls button.danger { background: #c33; }
+  .controls button.danger:hover { background: #e44; }
+  .sections { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+  @media (max-width: 900px) { .sections { grid-template-columns: 1fr; } }
+  .section { background: #fff; border: 1px solid #e5e0d8; border-radius: 10px; padding: 16px; display: flex; flex-direction: column; min-height: 200px; }
+  .section h2 { margin: 0 0 4px 0; font-size: 15px; letter-spacing: 1px; text-transform: uppercase; color: #666; }
+  .section .count { font-size: 11px; color: #aaa; font-weight: normal; margin-bottom: 10px; font-variant-numeric: tabular-nums; }
+  .section.questions h2 { color: #7e3a93; }
+  .section.comments  h2 { color: #1d7373; }
+  .section.shoutouts h2 { color: #c89211; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 2px solid #f0ebe2; }
+  .tab-btn { flex: 1; padding: 5px 10px; background: transparent; border: 1px solid #e5e0d8; border-radius: 5px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; color: #888; cursor: pointer; font-family: inherit; transition: all 120ms; }
+  .tab-btn:hover { background: #faf6ef; color: #555; }
+  .tab-btn.active { color: #fff; border-color: transparent; }
+  .section.questions .tab-btn.active { background: #7e3a93; }
+  .section.comments  .tab-btn.active { background: #1d7373; }
+  .section.shoutouts .tab-btn.active { background: #c89211; }
+  .tab-count { font-size: 10px; opacity: 0.75; margin-left: 3px; font-variant-numeric: tabular-nums; }
+  ul { list-style: none; margin: 0; padding: 0; max-height: 65vh; overflow-y: auto; flex: 1; }
+  li { padding: 8px 4px; border-bottom: 1px solid #f5f0e8; display: flex; align-items: flex-start; gap: 6px; font-size: 13px; line-height: 1.4; transition: background-color 160ms; }
+  li:last-child { border-bottom: none; }
+  /* Schema 1.2: aired marker-fill — yellow highlighter persisting into archive view */
+  li.aired { background-color: #fff8c4; border-radius: 4px; margin: 2px 0; padding: 8px 6px; }
+  li.archived label { text-decoration: line-through; color: #bbb; }
+  li.archived .user { color: #ccc; }
+  li.archived.aired label { color: #8a7a3a; }  /* archived + aired = subdued strikethrough but yellow stays */
+  li.archived.aired .user { color: #a89760; }
+  input[type="checkbox"] { margin-top: 3px; cursor: pointer; flex-shrink: 0; }
+  label { cursor: pointer; word-break: break-word; flex: 1; }
+  .user { font-weight: 600; color: #555; }
+  /* Schema 1.2: action buttons (📺 aired, → todo) — between label and × delete */
+  .action-btn { background: transparent; border: 1px solid #e5e0d8; color: #888; border-radius: 4px; padding: 1px 5px; font-size: 13px; line-height: 1.2; cursor: pointer; font-family: inherit; flex-shrink: 0; opacity: 0.45; transition: opacity 120ms, background 120ms, border-color 120ms, color 120ms; align-self: flex-start; margin-top: 1px; }
+  .action-btn:hover { opacity: 1; }
+  .action-btn.aired-btn.active { background: #fff8c4; border-color: #c89211; color: #8a6510; opacity: 1; }
+  .action-btn.todo-btn.active { background: #fff1e0; border-color: #b85c00; color: #b85c00; opacity: 1; }
+  .delete-btn { background: transparent; border: none; color: #c33; font-size: 18px; line-height: 1; padding: 0 4px; cursor: pointer; font-weight: 700; flex-shrink: 0; opacity: 0.5; transition: opacity 120ms; }
+  .delete-btn:hover { opacity: 1; }
+  .empty { color: #ccc; font-style: italic; font-size: 12px; padding: 8px 4px; }
+  .legend-bar { font-size: 11px; color: #888; margin-top: 18px; padding: 10px 14px; background: #fff; border: 1px solid #e5e0d8; border-radius: 8px; line-height: 1.6; }
+  .legend-bar code { background: #f0ebe2; padding: 1px 6px; border-radius: 4px; font-size: 11px; }
+  .legend-bar .palette-chip { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 3px; vertical-align: middle; border: 1px solid rgba(0,0,0,0.1); }
+  /* Demo harness controls — only present in PTTV-Live-Tracker-Demo.html */
+  .demo-bar { background: linear-gradient(135deg, #fff8c4 0%, #fff1e0 100%); border: 1px solid #c89211; border-radius: 8px; padding: 12px 16px; margin: -8px 0 20px 0; font-size: 13px; line-height: 1.7; }
+  .demo-bar strong { color: #8a6510; margin-right: 8px; }
+  .demo-btn { padding: 5px 12px; border: none; border-radius: 5px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; margin-right: 6px; transition: opacity 120ms; }
+  .demo-btn:hover { opacity: 0.85; }
+  .demo-btn.primary { background: #36a; color: #fff; }
+  .demo-btn.warn { background: #b85c00; color: #fff; }
+  .demo-btn.info { background: #555; color: #fff; }
+  .demo-hint { display: block; margin-top: 8px; color: #666; font-size: 11px; font-style: italic; }
+</style>
+</head>
+<body>
+<h1>🧪 PTTV Tracker DEMO — Schema 1.2 smoke test</h1>
+<div class="subtitle"><strong>Demo harness</strong> for Schema 1.2 — isolated from production (storage keys: <code>pttv_demo_questions</code>, <code>pttv_demo_comments</code>, <code>pttv_demo_shoutouts</code>). Use the demo controls below to load mock items, then exercise the new buttons (<strong>📺</strong> aired, <strong>→</strong> todo) and verify the export JSON has the Schema 1.2 shape. This file is NOT fetched by Genesis — it's a standalone smoke test you open directly in a browser.</div>
+<div class="demo-bar">
+  <strong>🧪 Demo controls:</strong>
+  <button class="demo-btn primary" onclick="loadMockData(10)">Load 10 items</button>
+  <button class="demo-btn primary" onclick="loadMockData(25)">Load 25 items</button>
+  <button class="demo-btn primary" onclick="loadMockData(40)">Load all 40 items</button>
+  <button class="demo-btn warn" onclick="clearDemoData()">Clear demo data</button>
+  <button class="demo-btn info" onclick="showSchemaSample()">Show schema sample</button>
+  <span class="demo-hint">Mock items include geographic mentions (→ shoutouts), product references (Mimi/Zoe/Charlie/Buddy/Jane/Maurice/Daily/Jack), and 5 items that read like todos. Use them to exercise all Schema 1.2 features.</span>
+</div>
+<div class="controls">
+  <button onclick="exportActive()">📋 Copy active to clipboard</button>
+  <button onclick="exportAll()">📋 Copy ALL to clipboard</button>
+  <button onclick="exportJSON()">💾 Export full state (JSON)</button>
+  <button class="archive-bulk" onclick="archiveAll()">🗄️ Archive everything</button>
+  <button class="danger" onclick="deleteAllArchived()">🗑️ Permanently delete all archived</button>
+</div>
+<div class="sections">
+  <div class="section questions">
+    <h2>Questions</h2>
+    <div class="count" id="q-count"></div>
+    <div class="tabs">
+      <button class="tab-btn" data-cat="questions" data-tab="active"   onclick="setTab('questions','active')">Active <span class="tab-count" id="q-tab-active"></span></button>
+      <button class="tab-btn" data-cat="questions" data-tab="archived" onclick="setTab('questions','archived')">Archived <span class="tab-count" id="q-tab-archived"></span></button>
+    </div>
+    <ul id="questions-list"></ul>
+  </div>
+  <div class="section comments">
+    <h2>Comments</h2>
+    <div class="count" id="c-count"></div>
+    <div class="tabs">
+      <button class="tab-btn" data-cat="comments" data-tab="active"   onclick="setTab('comments','active')">Active <span class="tab-count" id="c-tab-active"></span></button>
+      <button class="tab-btn" data-cat="comments" data-tab="archived" onclick="setTab('comments','archived')">Archived <span class="tab-count" id="c-tab-archived"></span></button>
+    </div>
+    <ul id="comments-list"></ul>
+  </div>
+  <div class="section shoutouts">
+    <h2>Shoutouts</h2>
+    <div class="count" id="s-count"></div>
+    <div class="tabs">
+      <button class="tab-btn" data-cat="shoutouts" data-tab="active"   onclick="setTab('shoutouts','active')">Active <span class="tab-count" id="s-tab-active"></span></button>
+      <button class="tab-btn" data-cat="shoutouts" data-tab="archived" onclick="setTab('shoutouts','archived')">Archived <span class="tab-count" id="s-tab-archived"></span></button>
+    </div>
+    <ul id="shoutouts-list"></ul>
+  </div>
+</div>
+<div class="legend-bar">
+  <strong>How it works:</strong> Check an item on Active → moves to Archive (no lingering strikethrough on Active). Uncheck on Archive → restores. <strong>📺 aired</strong> (<span class="palette-chip" style="background:#fff8c4;"></span> yellow marker-fill) = mentioned on-air; visible across Active and Archive so end-of-show you can see what made it vs what didn't. <strong>→ todo</strong> (<span class="palette-chip" style="background:#fff1e0; border-color:#b85c00;"></span> orange flag) = pull into the end-of-session team-todos artifact. Per-item <span style="color: #c33; font-weight: 700;">×</span> and "Permanently delete all archived" are the only destructive operations — both confirm before acting. Both tabs start empty each session; the long-term project archive is the persistent store.
+</div>
+<script>
+  const CATEGORIES = ['questions', 'comments', 'shoutouts'];
+  const KEYS = { questions: 'pttv_demo_questions', comments: 'pttv_demo_comments', shoutouts: 'pttv_demo_shoutouts' };
+  const tabState = { questions: 'active', comments: 'active', shoutouts: 'active' };
+
+  // Schema 1.2: items shape = { text, checked, archived, aired, todo, firstSeenAt }
+  // Backward-compatible with 1.1 (aired/todo default false when reading older data).
+  function normalizeItem(item) {
+    return {
+      text: item.text,
+      checked: !!item.checked,
+      archived: 'archived' in item ? !!item.archived : false,
+      aired: 'aired' in item ? !!item.aired : false,
+      todo: 'todo' in item ? !!item.todo : false,
+      firstSeenAt: 'firstSeenAt' in item ? item.firstSeenAt : null
+    };
+  }
+  function load(category) { try { return JSON.parse(localStorage.getItem(KEYS[category]) || '[]').map(normalizeItem); } catch (e) { return []; } }
+  function save(category, items) { localStorage.setItem(KEYS[category], JSON.stringify(items)); }
+
+  // Genesis-facing contract: signature unchanged. New flags default to false.
+  function appendItems(category, newItems) {
+    const existing = load(category);
+    const seen = new Set(existing.map(i => i.text));
+    const now = new Date().toISOString();
+    let added = 0;
+    for (const text of newItems) {
+      if (!seen.has(text)) {
+        existing.push({ text, checked: false, archived: false, aired: false, todo: false, firstSeenAt: now });
+        seen.add(text); added++;
+      }
+    }
+    save(category, existing); render(category); return added;
+  }
+  window.appendItems = appendItems;
+
+  function setTab(category, tab) { tabState[category] = tab; render(category); }
+
+  function toggleArchived(category, index) {
+    const items = load(category); if (!items[index]) return;
+    const willArchive = !items[index].archived;
+    items[index].archived = willArchive; items[index].checked = willArchive;
+    save(category, items); render(category);
+  }
+  function toggleAired(category, index) {
+    const items = load(category); if (!items[index]) return;
+    items[index].aired = !items[index].aired;
+    save(category, items); render(category);
+  }
+  function toggleTodo(category, index) {
+    const items = load(category); if (!items[index]) return;
+    items[index].todo = !items[index].todo;
+    save(category, items); render(category);
+  }
+  function deleteItem(category, index) {
+    const items = load(category); if (!items[index]) return;
+    if (!confirm('Permanently delete this archived item?\n\n' + items[index].text + '\n\nThis CANNOT be undone. The item will not appear in any future export or the long-term archive.')) return;
+    items.splice(index, 1); save(category, items); render(category);
+  }
+
+  function render(category) {
+    const items = load(category);
+    const indexed = items.map((item, i) => ({ item, idx: i }));
+    const active = indexed.filter(x => !x.item.archived);
+    const archived = indexed.filter(x => x.item.archived);
+    const currentTab = tabState[category];
+    document.getElementById(category[0] + '-count').textContent = active.length + ' active · ' + archived.length + ' archived · ' + items.length + ' total';
+    document.getElementById(category[0] + '-tab-active').textContent = '(' + active.length + ')';
+    document.getElementById(category[0] + '-tab-archived').textContent = '(' + archived.length + ')';
+    document.querySelectorAll('.tab-btn[data-cat="' + category + '"]').forEach(btn => { btn.classList.toggle('active', btn.dataset.tab === currentTab); });
+    const list = document.getElementById(category + '-list');
+    const showing = currentTab === 'active' ? active : archived;
+    if (showing.length === 0) { list.innerHTML = '<li class="empty">' + (currentTab === 'active' ? 'No active items.' : 'No archived items.') + '</li>'; return; }
+    list.innerHTML = '';
+    showing.forEach(({ item, idx }) => {
+      const li = document.createElement('li');
+      if (item.archived) li.classList.add('archived');
+      if (item.aired) li.classList.add('aired');
+
+      // Checkbox = archive toggle (existing semantics)
+      const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = item.archived; cb.id = category + '-' + idx;
+      cb.addEventListener('change', () => toggleArchived(category, idx));
+
+      // Label
+      const label = document.createElement('label'); label.setAttribute('for', cb.id);
+      const dashIdx = item.text.indexOf(' — ');
+      if (dashIdx > -1) {
+        const user = item.text.slice(0, dashIdx); const content = item.text.slice(dashIdx);
+        label.innerHTML = '<span class="user">' + escapeHTML(user) + '</span>' + escapeHTML(content);
+      } else { label.textContent = item.text; }
+
+      // Schema 1.2: aired button (📺)
+      const airedBtn = document.createElement('button');
+      airedBtn.className = 'action-btn aired-btn' + (item.aired ? ' active' : '');
+      airedBtn.textContent = '📺';
+      airedBtn.title = item.aired ? 'Mark as not aired (currently flagged as aired)' : 'Mark as aired (mentioned on-air)';
+      airedBtn.setAttribute('aria-label', airedBtn.title);
+      airedBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); toggleAired(category, idx); });
+
+      // Schema 1.2: todo button (→)
+      const todoBtn = document.createElement('button');
+      todoBtn.className = 'action-btn todo-btn' + (item.todo ? ' active' : '');
+      todoBtn.textContent = '→';
+      todoBtn.title = item.todo ? 'Unflag from team-todos' : 'Flag for team-todos (end-of-session artifact)';
+      todoBtn.setAttribute('aria-label', todoBtn.title);
+      todoBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); toggleTodo(category, idx); });
+
+      li.appendChild(cb); li.appendChild(label); li.appendChild(airedBtn); li.appendChild(todoBtn);
+
+      if (currentTab === 'archived') {
+        const delBtn = document.createElement('button'); delBtn.className = 'delete-btn'; delBtn.textContent = '×'; delBtn.title = 'Permanently delete this item';
+        delBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); deleteItem(category, idx); });
+        li.appendChild(delBtn);
+      }
+      list.appendChild(li);
+    });
+  }
+  function escapeHTML(s) { return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  function exportActive() {
+    const out = [];
+    for (const cat of CATEGORIES) {
+      const prefix = cat[0].toUpperCase();
+      const items = load(cat).filter(i => !i.archived);
+      out.push('++++++++++++++ ' + cat.toUpperCase() + ' ++++++++++++++'); out.push('');
+      if (items.length === 0) out.push('(no active items)');
+      else items.forEach(i => {
+        const flags = (i.aired ? ' [📺]' : '') + (i.todo ? ' [→todo]' : '');
+        out.push(prefix + ' [] ' + i.text + flags); out.push('');
+      });
+      out.push('','','','');
+    }
+    navigator.clipboard.writeText(out.join('\n')); alert('Active items copied to clipboard.');
+  }
+  function exportAll() {
+    const out = [];
+    for (const cat of CATEGORIES) {
+      const prefix = cat[0].toUpperCase();
+      const items = load(cat);
+      out.push('++++++++++++++ ' + cat.toUpperCase() + ' ++++++++++++++'); out.push('');
+      items.forEach(i => {
+        const box = i.archived ? '[x]' : '[]';
+        const flags = (i.aired ? ' [📺]' : '') + (i.todo ? ' [→todo]' : '');
+        out.push(prefix + ' ' + box + ' ' + i.text + flags); out.push('');
+      });
+      out.push('','','','');
+    }
+    navigator.clipboard.writeText(out.join('\n')); alert('All items (active + archived) copied to clipboard.');
+  }
+  function exportJSON() {
+    const state = {
+      exportedAt: new Date().toISOString(),
+      trackerVersion: '2.1',
+      schemaVersion: '1.2',
+      questions: load('questions'),
+      comments: load('comments'),
+      shoutouts: load('shoutouts')
+    };
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'pttv-tracker-state-' + Date.now() + '.json'; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function archiveAll() {
+    const totalActive = CATEGORIES.reduce((sum, cat) => sum + load(cat).filter(i => !i.archived).length, 0);
+    if (totalActive === 0) { alert('Nothing to archive — all items are already archived or the tracker is empty.'); return; }
+    if (!confirm('Move ALL ' + totalActive + ' active items (across all 3 columns) to the Archive tab?\n\nThis is reversible — uncheck items on the Archive tab to restore them. Aired/todo flags are preserved.')) return;
+    for (const cat of CATEGORIES) {
+      const items = load(cat);
+      items.forEach(i => { if (!i.archived) { i.archived = true; i.checked = true; } });
+      save(cat, items); render(cat);
+    }
+  }
+  function deleteAllArchived() {
+    const totalArchived = CATEGORIES.reduce((sum, cat) => sum + load(cat).filter(i => i.archived).length, 0);
+    if (totalArchived === 0) { alert('Nothing to delete — there are no archived items.'); return; }
+    if (!confirm('Permanently delete ALL ' + totalArchived + ' archived items (across all 3 columns)?\n\nThis CANNOT be undone. Make sure you have exported full state first (💾 button above) if you want these items preserved in the long-term archive.')) return;
+    for (const cat of CATEGORIES) {
+      const kept = load(cat).filter(i => !i.archived);
+      save(cat, kept); render(cat);
+    }
+  }
+
+  // ─── DEMO HARNESS DATA + CONTROLS ─────────────────────────────────────────
+  const DEMO_QUESTIONS = [
+  "@artistmom_42 \u2014 When's the next sale launch? Saving up for the Mimi bag!",
+  "@kp_collects \u2014 Will you restock the leopard Zoe? Been on the wait list forever",
+  "@thatch_obsessed \u2014 Irene, what's your favorite pairing for the Charlie tote in winter?",
+  "@new_to_pt_2024 \u2014 First time tuning in! How does the Buddy crossbody fit a Macbook Air?",
+  "@daily_carrier \u2014 Does the Daily come in the same brown as Jane?",
+  "@small_collector \u2014 Are you going to do another tassel sale? Need one in olive",
+  "@parker_too \u2014 What's the difference between Maurice and the sidekick clutch?",
+  "@studio_lover \u2014 Will there be a new collab this fall? Loved last year's",
+  "@first_purchase \u2014 Should I size up on the Jack or stay true to size?",
+  "@bag_questioner \u2014 Question for Irene \u2014 leather vs canvas for daily use? Pros and cons?",
+  "@returning_customer \u2014 Are the new monogram options going to come back in stock soon?",
+  "@curious_carl \u2014 What's the lining made of on the Mimi? Mine is starting to wear",
+  "@vip_24 \u2014 When do you announce the holiday collection drop?"
+];
+  const DEMO_COMMENTS = [
+  "@love_pt_designs \u2014 Just got my Zoe yesterday and I'm OBSESSED, thank you team!",
+  "@designer_at_heart \u2014 Your styling videos always inspire me to use my bags differently",
+  "@longtime_fan \u2014 Watching you and Irene chat is the highlight of my week tbh",
+  "@bagcollector99 \u2014 The new gold hardware is *chef's kiss*",
+  "@daily_show_viewer \u2014 Parker your camera setup looks great today, much better lighting",
+  "@kpop_thatch \u2014 Charlie + new wallet combo is perfection for fall",
+  "@nyc_to_dallas \u2014 Streaming this from my office break \u2014 y'all keep me sane on Wednesdays",
+  "@gift_giver \u2014 Bought one for my mom for her birthday \u2014 she sent me 5 thank-you texts",
+  "@brand_loyal \u2014 It's so cool you're doing these lives, makes the brand feel so personal",
+  "@product_obsessed \u2014 The way you photograph the leather always makes me want to buy more",
+  "@just_a_lurker \u2014 Lurking from work, the new Jack design is fantastic"
+];
+  const DEMO_SHOUTOUTS = [
+  "@phoenix_party \u2014 Tuning in from Phoenix Arizona, love you guys!",
+  "@bostoncommongirl \u2014 Boston represent! Watching while walking the common",
+  "@brooklyn_in_house \u2014 Brooklyn brownstone tuning in",
+  "@nashville_nights \u2014 Nashville Tennessee in the house!",
+  "@portland_or_rep \u2014 Portland Oregon \u2014 love the rain love the show",
+  "@chicago_loop \u2014 Chicago checking in! It's freezing here but Mimi keeps me happy",
+  "@miami_beach_fan \u2014 Miami Beach watching from the balcony",
+  "@austin_texas_mom \u2014 Austin TX mom of 3 \u2014 these lives are my me-time",
+  "@dallas_designer \u2014 Dallas Texas! Question for Irene \u2014 see Q list",
+  "@seattle_grunge \u2014 Seattle Washington, can't wait for the next drop",
+  "@denver_mountains \u2014 Denver Colorado, snow day so I'm here!",
+  "@london_uk_fan \u2014 London UK, staying up late for y'all",
+  "@paris_fashion \u2014 Paris France, bonjour from le marais!",
+  "@toronto_canada_eh \u2014 Toronto Canada, eh!",
+  "@scottsdale_az \u2014 Scottsdale Arizona checking in!",
+  "@charleston_sc \u2014 Charleston SC, the new gold is gorgeous"
+];
+  function loadMockData(count) {
+    // Clear existing demo data first to make repeated loads deterministic
+    CATEGORIES.forEach(cat => localStorage.removeItem(KEYS[cat]));
+    // Distribute count proportionally: ~33% Q, ~27% C, ~40% S (matching dataset distribution)
+    const qCount = Math.min(DEMO_QUESTIONS.length, Math.ceil(count * 0.33));
+    const cCount = Math.min(DEMO_COMMENTS.length, Math.ceil(count * 0.27));
+    const sCount = Math.min(DEMO_SHOUTOUTS.length, count - qCount - cCount);
+    appendItems('questions', DEMO_QUESTIONS.slice(0, qCount));
+    appendItems('comments', DEMO_COMMENTS.slice(0, cCount));
+    appendItems('shoutouts', DEMO_SHOUTOUTS.slice(0, sCount));
+  }
+  function clearDemoData() {
+    if (!confirm('Clear all demo data (Q/C/S)? localStorage keys pttv_demo_* will be wiped. Production keys (pttv_*) are not touched.')) return;
+    CATEGORIES.forEach(cat => localStorage.removeItem(KEYS[cat]));
+    CATEGORIES.forEach(render);
+  }
+  function showSchemaSample() {
+    // Build a one-item sample showing the full Schema 1.2 shape
+    const sample = {
+      exportedAt: new Date().toISOString(),
+      trackerVersion: '2.1',
+      schemaVersion: '1.2',
+      questions: [{ text: '@sampleuser — sample question here', checked: false, archived: false, aired: true, todo: true, firstSeenAt: new Date().toISOString() }],
+      comments: [],
+      shoutouts: []
+    };
+    const blob = new Blob([JSON.stringify(sample, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'pttv-tracker-schema-1.2-sample.json'; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  // ──────────────────────────────────────────────────────────────────────────
+  CATEGORIES.forEach(render);
+</script>
+</body>
+</html>
