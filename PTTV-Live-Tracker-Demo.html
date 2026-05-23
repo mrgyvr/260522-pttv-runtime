@@ -1,5 +1,5 @@
 <!-- PTTV-Live-Tracker-Demo -->
-<!-- Schema 1.3.0 / Tracker v2.3.0 — DEMO HARNESS (260523 b: + Phase I user-aggregation, sibling status board, card navigation; demo data updated with cross-column users and [IG]/[YT] platform tags) -->
+<!-- Schema 1.3.0 / Tracker v2.4.0 — DEMO HARNESS (260523 b: + timestamps, command palette, drag-reorder) -->
 <!--   • Identical code paths to production PTTV-Live-Tracker.html, but uses ISOLATED localStorage keys (pttv_demo_*) -->
 <!--   • Open in any browser — no Chrome extension or live show required -->
 <!--   • Demo control bar at top: Load 10/25/40 mock items + Clear demo data + Show schema sample -->
@@ -111,6 +111,28 @@
   .back-pill .arrow { font-weight: 700; font-size: 12px; }
   .back-pill .close { margin-left: 4px; opacity: 0.6; font-size: 14px; line-height: 1; padding: 0 2px; }
   .back-pill .close:hover { opacity: 1; }
+  /* Phase C: timestamp pill in card-header */
+  .timestamp-pill { font-size: 10px; color: #999; flex-shrink: 0; padding: 0 4px; font-variant-numeric: tabular-nums; }
+  .timestamp-pill .rel { font-weight: 600; }
+  .timestamp-pill .abs { opacity: 0.7; margin-left: 3px; }
+  /* Phase C: drag-handle in card-header */
+  .drag-handle { cursor: grab; opacity: 0.35; font-size: 13px; padding: 0 3px 0 0; line-height: 1; flex-shrink: 0; user-select: none; font-weight: 700; color: #666; }
+  .drag-handle:hover { opacity: 0.85; }
+  .drag-handle:active { cursor: grabbing; }
+  li.card.dragging { opacity: 0.35; }
+  li.card.drag-over-top { box-shadow: inset 0 3px 0 #c89211; }
+  /* Phase C: command palette drawer */
+  .palette-drawer { background: #fff; border: 1px solid #e5e0d8; border-radius: 10px; margin-bottom: 18px; overflow: hidden; }
+  .palette-toggle { width: 100%; padding: 9px 14px; background: transparent; border: none; font-size: 12px; font-weight: 600; color: #555; text-align: left; cursor: pointer; font-family: inherit; display: flex; align-items: center; gap: 6px; transition: background 120ms; }
+  .palette-toggle:hover { background: #faf6ef; }
+  .palette-toggle .chevron { font-size: 10px; transition: transform 180ms; }
+  .palette-drawer.open .palette-toggle .chevron { transform: rotate(90deg); }
+  .palette-body { display: none; padding: 6px 14px 14px; border-top: 1px solid #f0ebe2; font-size: 12px; line-height: 1.6; color: #555; }
+  .palette-drawer.open .palette-body { display: block; }
+  .palette-section { margin-top: 8px; }
+  .palette-section h3 { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: #888; margin: 8px 0 4px; font-weight: 700; }
+  .palette-cmd { display: inline-block; font-family: 'SF Mono', Monaco, Menlo, monospace; font-size: 11px; background: #f0ebe2; padding: 1px 6px; border-radius: 3px; color: #333; margin-right: 4px; }
+  .palette-note { color: #888; font-size: 11px; margin-top: 4px; font-style: italic; }
   .card-header { display: flex; align-items: center; gap: 6px; padding-bottom: 4px; border-bottom: 1px solid rgba(0,0,0,0.06); }
   .card-body { word-break: break-word; }
   input[type="checkbox"] { cursor: pointer; flex-shrink: 0; margin: 0; }
@@ -157,6 +179,33 @@
   <button onclick="exportJSON()">💾 Export full state (JSON)</button>
   <button class="archive-bulk" onclick="archiveAll()">🗄️ Archive everything</button>
   <button class="danger" onclick="deleteAllArchived()">🗑️ Permanently delete all archived</button>
+</div>
+<div class="palette-drawer" id="palette-drawer">
+  <button class="palette-toggle" onclick="document.getElementById('palette-drawer').classList.toggle('open')">
+    <span class="chevron">▶</span>
+    <span>💡 Commands you can give the Genesis</span>
+  </button>
+  <div class="palette-body">
+    <div class="palette-section">
+      <h3>Manual go-cycle</h3>
+      <span class="palette-cmd">go</span> — run one pull/dedupe/categorize cycle
+      <span class="palette-cmd">we're live!</span> — start a manual-mode session (Steps 1–3 setup, then waits for go)
+    </div>
+    <div class="palette-section">
+      <h3>Auto mode</h3>
+      <span class="palette-cmd">we're live, auto!</span> — start an auto-mode session (Steps 1–4 setup, then watches heartbeat)
+      <span class="palette-cmd">auto</span> — switch from manual to auto mid-session
+      <span class="palette-cmd">manual</span> / <span class="palette-cmd">fallback</span> — switch back to manual
+      <span class="palette-cmd">pause</span> — stop polling, heartbeat keeps ticking
+      <span class="palette-cmd">resume</span> — resume auto polling after pause
+    </div>
+    <div class="palette-section">
+      <h3>Status + end</h3>
+      <span class="palette-cmd">status</span> — current mode, tick count, totals across Q/C/S
+      <span class="palette-cmd">we're done</span> / <span class="palette-cmd">wrap up</span> — run end-of-session ritual (merge archive + generate wrap-up checklist)
+    </div>
+    <div class="palette-note">These are typed in the Claude Chrome-extension chat, not here in the tracker. This drawer is a cheat sheet.</div>
+  </div>
 </div>
 <div class="sections">
   <div class="section questions">
@@ -291,6 +340,45 @@
     navigationSource = null;
     if (cat) render(cat);
   }
+  // Phase C: session-start = earliest firstSeenAt across all categories. Computed per-render so it stays accurate.
+  function getSessionStart() {
+    let earliest = null;
+    for (const cat of CATEGORIES) {
+      for (const it of load(cat)) {
+        if (it.firstSeenAt) {
+          const t = new Date(it.firstSeenAt).getTime();
+          if (earliest === null || t < earliest) earliest = t;
+        }
+      }
+    }
+    return earliest;
+  }
+  function fmtTimestamp(firstSeenAt, sessionStart) {
+    if (!firstSeenAt) return null;
+    const t = new Date(firstSeenAt).getTime();
+    if (isNaN(t)) return null;
+    const relMin = sessionStart !== null ? Math.max(0, Math.floor((t - sessionStart) / 60000)) : 0;
+    // Pacific-ish 12h clock (no tz conversion in v1 — uses local clock since this is run on Matt's machine which IS PT)
+    const d = new Date(t);
+    let h = d.getHours();
+    const m = String(d.getMinutes()).padStart(2, '0');
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12; if (h === 0) h = 12;
+    return { rel: '+' + relMin + 'm', abs: h + ':' + m + ampm };
+  }
+  // Phase C: drag-reorder within a category. sourceCardId is moved to immediately BEFORE targetCardId in the full array.
+  function reorderInCategory(category, sourceCardId, targetCardId) {
+    if (sourceCardId === targetCardId) return;
+    const items = load(category);
+    const srcIdx = items.findIndex(it => it.cardId === sourceCardId);
+    if (srcIdx === -1) return;
+    const [moved] = items.splice(srcIdx, 1);
+    const newTgtIdx = items.findIndex(it => it.cardId === targetCardId);
+    if (newTgtIdx === -1) { items.splice(srcIdx, 0, moved); return; }  // target gone — restore
+    items.splice(newTgtIdx, 0, moved);
+    save(category, items);
+    render(category);
+  }
   // v2.1.3: non-sequential 3-digit cardId with collision-retry. Scans all 3 categories for in-use IDs and re-rolls until unique.
   function generateCardId() {
     const inUse = new Set();
@@ -362,6 +450,7 @@
     document.querySelectorAll('.tab-btn[data-cat="' + category + '"]').forEach(btn => { btn.classList.toggle('active', btn.dataset.tab === currentTab); });
     const list = document.getElementById(category + '-list');
     const showing = currentTab === 'active' ? active : archived;
+    const sessionStartRef = getSessionStart();
     if (showing.length === 0) { list.innerHTML = '<li class="empty">' + (currentTab === 'active' ? 'No active items.' : 'No archived items.') + '</li>'; return; }
     list.innerHTML = '';
     showing.forEach(({ item, idx }) => {
@@ -371,10 +460,46 @@
       if (item.cardId !== null && item.cardId !== undefined) li.setAttribute('data-card-id', item.cardId);
       if (item.archived) li.classList.add('archived');
       if (item.aired) li.classList.add('aired');
+      li.draggable = false;
+      li.addEventListener('dragstart', (e) => {
+        if (item.cardId === null || item.cardId === undefined) { e.preventDefault(); return; }
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('application/x-pttv-card', JSON.stringify({ cardId: item.cardId, category: category }));
+        li.classList.add('dragging');
+      });
+      li.addEventListener('dragend', () => { li.classList.remove('dragging'); li.draggable = false; document.querySelectorAll('.drag-over-top').forEach(el => el.classList.remove('drag-over-top')); });
+      li.addEventListener('dragover', (e) => {
+        // Only accept same-category drags
+        const types = e.dataTransfer.types;
+        if (!types || !types.includes('application/x-pttv-card')) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        li.classList.add('drag-over-top');
+      });
+      li.addEventListener('dragleave', () => li.classList.remove('drag-over-top'));
+      li.addEventListener('drop', (e) => {
+        e.preventDefault();
+        li.classList.remove('drag-over-top');
+        try {
+          const payload = JSON.parse(e.dataTransfer.getData('application/x-pttv-card'));
+          if (payload.category !== category) return;  // cross-column drops ignored
+          if (payload.cardId === item.cardId) return;
+          reorderInCategory(category, payload.cardId, item.cardId);
+        } catch (err) { /* not our drag, ignore */ }
+      });
 
       // ---- CARD HEADER (controls row) ----
       const header = document.createElement('div');
       header.className = 'card-header';
+
+      // Phase C: drag handle (leftmost, before checkbox)
+      const dragHandle = document.createElement('span');
+      dragHandle.className = 'drag-handle';
+      dragHandle.textContent = '⋮⋮';
+      dragHandle.title = 'Drag to reorder within this column';
+      dragHandle.addEventListener('mousedown', () => { li.draggable = true; });
+      dragHandle.addEventListener('mouseup', () => { setTimeout(() => { li.draggable = false; }, 50); });
+      header.appendChild(dragHandle);
 
       // Checkbox = archive toggle
       const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = item.archived; cb.id = category + '-' + idx;
@@ -424,6 +549,16 @@
         notesInd.className = 'notes-indicator'; notesInd.textContent = '📝';
         notesInd.title = 'Has notes — expand to view (' + item.notes.trim().length + ' chars)';
         header.appendChild(notesInd);
+      }
+
+      // Phase C: timestamp pill (before spacer)
+      const ts = fmtTimestamp(item.firstSeenAt, sessionStartRef);
+      if (ts) {
+        const tsPill = document.createElement('span');
+        tsPill.className = 'timestamp-pill';
+        tsPill.innerHTML = '<span class="rel">' + ts.rel + '</span><span class="abs">' + ts.abs + '</span>';
+        tsPill.title = 'First seen ' + ts.rel + ' into the session at ' + ts.abs;
+        header.appendChild(tsPill);
       }
 
       // Phase H: spacer + expand toggle (always), then delete (archived only)
@@ -639,7 +774,7 @@
   function exportJSON() {
     const state = {
       exportedAt: new Date().toISOString(),
-      trackerVersion: '2.3.0',
+      trackerVersion: '2.4.0',
       schemaVersion: '1.3.0',
       questions: load('questions'),
       comments: load('comments'),
@@ -736,7 +871,7 @@
     // Build a one-item sample showing the full Schema 1.2 shape
     const sample = {
       exportedAt: new Date().toISOString(),
-      trackerVersion: '2.3.0',
+      trackerVersion: '2.4.0',
       schemaVersion: '1.3.0',
       questions: [{ text: '@sampleuser — sample question here', checked: false, archived: false, aired: true, todo: true, firstSeenAt: new Date().toISOString(), cardId: 427, notes: 'addressed on-air; she also asked about lining material — see card #519' }],
       comments: [],
