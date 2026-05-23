@@ -1,4 +1,10 @@
 <!-- PTTV-Live-Tracker -->
+<!-- Schema 1.3.0 / Tracker v2.2.0 — Phase H (260523 b): notes field + card expand/collapse -->
+<!--   • SCHEMA 1.3: new per-item .notes field (free-form string, default ''). Backward-compatible normalizeItem reads pre-1.3 items as notes=''. -->
+<!--   • EXPAND: cards can be expanded to reveal a notes textarea. Two triggers: dedicated ▼/▲ button in card-header (right side), OR click on .card-body (with text-selection guard — selection is preserved). -->
+<!--   • NOTES TEXTAREA: autosaves on input (no debounce — localStorage writes are fast), re-renders on blur or on empty↔non-empty transitions to keep the 📝 header indicator accurate. -->
+<!--   • EXPAND STATE: in-memory Set keyed by cardId, survives tab switches and renders. Not persisted across page reloads (ephemeral UI). -->
+<!--   • EXPORTS: clipboard exports now include cardId pill prefix + a continuation line with notes (📝 prefix) when present. JSON export shape bumped. -->
 <!-- Schema 1.2.2 / Tracker v2.1.3 — changes from v2.1.2 (260523 b): -->
 <!--   • CARDID: 3-digit non-sequential cardId field per item, auto-assigned with collision-retry. Displayed as a pill prefix in the card body (e.g., 390 · @Cat123 [IG] — text). Foundational for Phase J Fireflies integration. -->
 <!--   • WIDTH: body max-width changed from 1100px to min(1600px, 95vw) — columns now scale up on wider displays. -->
@@ -76,6 +82,21 @@
   /* v2.1.3: cardId pill — non-sequential 3-digit identifier shown inline before the username */
   .card-id { font-family: 'SF Mono', Monaco, Menlo, monospace; font-size: 12px; font-weight: 700; color: #555; background-color: rgba(255,255,255,0.85); border: 1px solid rgba(0,0,0,0.18); border-radius: 4px; padding: 1px 6px; letter-spacing: 0.4px; margin-right: 7px; vertical-align: 1px; }
   li.card.archived .card-id { color: #999; background-color: rgba(255,255,255,0.5); }
+  /* Phase H: card body becomes click target for expand/collapse */
+  .card-body { cursor: pointer; }
+  .card-body * { cursor: text; }
+  .notes-indicator { font-size: 13px; flex-shrink: 0; opacity: 0.75; line-height: 1; padding: 0 2px; }
+  .header-spacer { flex: 1; }
+  .action-btn.expand-btn { font-size: 11px; padding: 2px 7px; min-width: 22px; opacity: 0.55; }
+  .action-btn.expand-btn:hover { opacity: 1; }
+  li.card.expanded .action-btn.expand-btn { opacity: 1; background-color: rgba(0,0,0,0.06); }
+  .card-expanded { display: none; padding-top: 8px; margin-top: 6px; border-top: 1px solid rgba(0,0,0,0.08); }
+  li.card.expanded .card-expanded { display: block; animation: card-expand-in 180ms ease-out; }
+  @keyframes card-expand-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+  .notes-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: #888; font-weight: 600; margin-bottom: 4px; display: block; }
+  .notes-textarea { width: 100%; min-height: 60px; padding: 6px 8px; border: 1px solid rgba(0,0,0,0.15); border-radius: 4px; font-family: inherit; font-size: 12px; line-height: 1.5; background-color: rgba(255,255,255,0.7); resize: vertical; box-sizing: border-box; color: #222; }
+  .notes-textarea:focus { outline: none; border-color: rgba(0,0,0,0.35); background-color: #fff; }
+  .notes-textarea::placeholder { color: #b5b1aa; font-style: italic; }
   .card-header { display: flex; align-items: center; gap: 6px; padding-bottom: 4px; border-bottom: 1px solid rgba(0,0,0,0.06); }
   .card-body { word-break: break-word; }
   input[type="checkbox"] { cursor: pointer; flex-shrink: 0; margin: 0; }
@@ -152,8 +173,28 @@
       aired: 'aired' in item ? !!item.aired : false,
       todo: 'todo' in item ? !!item.todo : false,
       firstSeenAt: 'firstSeenAt' in item ? item.firstSeenAt : null,
-      cardId: ('cardId' in item && item.cardId !== null) ? item.cardId : null
+      cardId: ('cardId' in item && item.cardId !== null) ? item.cardId : null,
+      notes: ('notes' in item && typeof item.notes === 'string') ? item.notes : ''
     };
+  }
+  // Phase H: expand state (in-memory, keyed by cardId; ephemeral UI)
+  const expandedCards = new Set();
+  function isExpanded(cardId) { return cardId !== null && cardId !== undefined && expandedCards.has(cardId); }
+  function toggleExpanded(cardId, category) {
+    if (cardId === null || cardId === undefined) return;
+    if (expandedCards.has(cardId)) expandedCards.delete(cardId);
+    else expandedCards.add(cardId);
+    render(category);
+  }
+  // Phase H: silent save for notes (no re-render churn while typing). Re-renders only on empty↔non-empty boundary (so 📝 indicator updates) or on explicit request (blur).
+  function setNotes(category, idx, value, shouldRender) {
+    const items = load(category);
+    if (!items[idx]) return;
+    const wasEmpty = !items[idx].notes || items[idx].notes.trim().length === 0;
+    const isEmpty = !value || value.trim().length === 0;
+    items[idx].notes = value;
+    save(category, items);
+    if (shouldRender || wasEmpty !== isEmpty) render(category);
   }
   // v2.1.3: non-sequential 3-digit cardId with collision-retry. Scans all 3 categories for in-use IDs and re-rolls until unique.
   function generateCardId() {
@@ -182,7 +223,7 @@
     let added = 0;
     for (const text of newItems) {
       if (!seen.has(text)) {
-        existing.push({ text, checked: false, archived: false, aired: false, todo: false, firstSeenAt: now, cardId: generateCardId() });
+        existing.push({ text, checked: false, archived: false, aired: false, todo: false, firstSeenAt: now, cardId: generateCardId(), notes: '' });
         seen.add(text); added++;
       }
     }
@@ -232,6 +273,7 @@
       // v2.1.2: card is a flex column — header row (controls) on top, body row (text) below
       const li = document.createElement('li');
       li.className = 'card';
+      if (item.cardId !== null && item.cardId !== undefined) li.setAttribute('data-card-id', item.cardId);
       if (item.archived) li.classList.add('archived');
       if (item.aired) li.classList.add('aired');
 
@@ -261,6 +303,28 @@
       todoBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); toggleTodo(category, idx); });
 
       header.appendChild(cb); header.appendChild(airedBtn); header.appendChild(todoBtn);
+
+      // Phase H: notes indicator (only when notes is non-empty)
+      const hasNotes = item.notes && item.notes.trim().length > 0;
+      if (hasNotes) {
+        const notesInd = document.createElement('span');
+        notesInd.className = 'notes-indicator'; notesInd.textContent = '📝';
+        notesInd.title = 'Has notes — expand to view (' + item.notes.trim().length + ' chars)';
+        header.appendChild(notesInd);
+      }
+
+      // Phase H: spacer + expand toggle (always), then delete (archived only)
+      const spacer = document.createElement('div'); spacer.className = 'header-spacer';
+      header.appendChild(spacer);
+
+      const expandBtn = document.createElement('button');
+      const isExp = isExpanded(item.cardId);
+      expandBtn.className = 'action-btn expand-btn';
+      expandBtn.textContent = isExp ? '▲' : '▼';
+      expandBtn.title = isExp ? 'Collapse card' : 'Expand for notes';
+      expandBtn.setAttribute('aria-label', expandBtn.title);
+      expandBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); toggleExpanded(item.cardId, category); });
+      header.appendChild(expandBtn);
 
       if (currentTab === 'archived') {
         const delBtn = document.createElement('button'); delBtn.className = 'delete-btn'; delBtn.textContent = '×'; delBtn.title = 'Permanently delete this item';
@@ -294,8 +358,35 @@
       }
       body.appendChild(label);
 
+      // Phase H: body-click is also an expand trigger (with text-selection guard so copy/paste works)
+      body.addEventListener('click', (e) => {
+        if (window.getSelection && window.getSelection().toString().length > 0) return;
+        if (e.target.closest('button, input, textarea, a')) return;
+        toggleExpanded(item.cardId, category);
+      });
+
       li.appendChild(header);
       li.appendChild(body);
+
+      // Phase H: expanded section is only rendered when this card is in the expanded set
+      if (isExp) {
+        li.classList.add('expanded');
+        const exp = document.createElement('div');
+        exp.className = 'card-expanded';
+        const notesLabel = document.createElement('label');
+        notesLabel.className = 'notes-label';
+        notesLabel.textContent = '📝 Notes';
+        const ta = document.createElement('textarea');
+        ta.className = 'notes-textarea';
+        ta.value = item.notes || '';
+        ta.placeholder = 'Notes about this ' + (category === 'questions' ? 'question' : category === 'comments' ? 'comment' : 'shoutout') + ' (e.g. what you said on-air, follow-up needed, customer history)…';
+        ta.addEventListener('input', () => setNotes(category, idx, ta.value, false));
+        ta.addEventListener('blur', () => setNotes(category, idx, ta.value, true));
+        exp.appendChild(notesLabel);
+        exp.appendChild(ta);
+        li.appendChild(exp);
+      }
+
       list.appendChild(li);
     });
   }
@@ -309,8 +400,13 @@
       out.push('++++++++++++++ ' + cat.toUpperCase() + ' ++++++++++++++'); out.push('');
       if (items.length === 0) out.push('(no active items)');
       else items.forEach(i => {
+        const idPrefix = (i.cardId !== null && i.cardId !== undefined) ? i.cardId + ' · ' : '';
         const flags = (i.aired ? ' 📺' : '') + (i.todo ? ' 🚩todo' : '');
-        out.push(prefix + ' [] ' + i.text + flags); out.push('');
+        out.push(prefix + ' [] ' + idPrefix + i.text + flags);
+        if (i.notes && i.notes.trim().length > 0) {
+          out.push('   📝 ' + i.notes.trim().replace(/\n/g, '\n      '));
+        }
+        out.push('');
       });
       out.push('','','','');
     }
@@ -324,8 +420,13 @@
       out.push('++++++++++++++ ' + cat.toUpperCase() + ' ++++++++++++++'); out.push('');
       items.forEach(i => {
         const box = i.archived ? '[x]' : '[]';
+        const idPrefix = (i.cardId !== null && i.cardId !== undefined) ? i.cardId + ' · ' : '';
         const flags = (i.aired ? ' 📺' : '') + (i.todo ? ' 🚩todo' : '');
-        out.push(prefix + ' ' + box + ' ' + i.text + flags); out.push('');
+        out.push(prefix + ' ' + box + ' ' + idPrefix + i.text + flags);
+        if (i.notes && i.notes.trim().length > 0) {
+          out.push('   📝 ' + i.notes.trim().replace(/\n/g, '\n      '));
+        }
+        out.push('');
       });
       out.push('','','','');
     }
@@ -334,8 +435,8 @@
   function exportJSON() {
     const state = {
       exportedAt: new Date().toISOString(),
-      trackerVersion: '2.1.3',
-      schemaVersion: '1.2.2',
+      trackerVersion: '2.2.0',
+      schemaVersion: '1.3.0',
       questions: load('questions'),
       comments: load('comments'),
       shoutouts: load('shoutouts')
