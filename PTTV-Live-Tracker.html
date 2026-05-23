@@ -1,9 +1,12 @@
-<!-- PTTV-Live-Tracker (v2.0) -->
-<!-- Changes from v1.0: Active/Archive sub-tabs per column · firstSeenAt ISO timestamps per item · -->
-<!-- column palette refresh (purple/teal/gold) · 'Clear everything' renamed to 'Archive everything' · -->
-<!-- 'Remove checked items' retired · per-item × delete + bulk 'Permanently delete all archived' on Archive tab -->
-<!-- Genesis-facing contracts preserved: localStorage keys (pttv_questions/comments/shoutouts) and -->
-<!-- window.appendItems(category, ["user — text", ...]) signature are unchanged. -->
+<!-- PTTV-Live-Tracker -->
+<!-- Schema 1.2 / Tracker v2.1 — changes from v2.0: -->
+<!--   • Per-item aired (bool) and todo (bool) fields, default false, backward-compatible with 1.1 -->
+<!--   • [📺] button per card toggles aired → marker-fill #fff8c4 yellow background, persists into Archive view -->
+<!--   • [→] button per card toggles todo → for end-of-session team-todos artifact -->
+<!--   • Click areas explicitly separated: checkbox (archive) | label | 📺 (aired) | → (todo) | × (delete, archive only) -->
+<!--   • Body click reserved (no action yet) for Phase H Schema 1.3 (notes + expand) -->
+<!--   • Genesis-facing contracts UNCHANGED: localStorage keys (pttv_questions/comments/shoutouts) and window.appendItems(category, ["user — text", ...]) signature -->
+<!--   • Export JSON bumps trackerVersion to "2.1"; per-item shape now { text, checked, archived, aired, todo, firstSeenAt } -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -39,23 +42,33 @@
   .section.shoutouts .tab-btn.active { background: #c89211; }
   .tab-count { font-size: 10px; opacity: 0.75; margin-left: 3px; font-variant-numeric: tabular-nums; }
   ul { list-style: none; margin: 0; padding: 0; max-height: 65vh; overflow-y: auto; flex: 1; }
-  li { padding: 8px 4px; border-bottom: 1px solid #f5f0e8; display: flex; align-items: flex-start; gap: 8px; font-size: 13px; line-height: 1.4; }
+  li { padding: 8px 4px; border-bottom: 1px solid #f5f0e8; display: flex; align-items: flex-start; gap: 6px; font-size: 13px; line-height: 1.4; transition: background-color 160ms; }
   li:last-child { border-bottom: none; }
+  /* Schema 1.2: aired marker-fill — yellow highlighter persisting into archive view */
+  li.aired { background-color: #fff8c4; border-radius: 4px; margin: 2px 0; padding: 8px 6px; }
   li.archived label { text-decoration: line-through; color: #bbb; }
   li.archived .user { color: #ccc; }
+  li.archived.aired label { color: #8a7a3a; }  /* archived + aired = subdued strikethrough but yellow stays */
+  li.archived.aired .user { color: #a89760; }
   input[type="checkbox"] { margin-top: 3px; cursor: pointer; flex-shrink: 0; }
   label { cursor: pointer; word-break: break-word; flex: 1; }
   .user { font-weight: 600; color: #555; }
+  /* Schema 1.2: action buttons (📺 aired, → todo) — between label and × delete */
+  .action-btn { background: transparent; border: 1px solid #e5e0d8; color: #888; border-radius: 4px; padding: 1px 5px; font-size: 13px; line-height: 1.2; cursor: pointer; font-family: inherit; flex-shrink: 0; opacity: 0.45; transition: opacity 120ms, background 120ms, border-color 120ms, color 120ms; align-self: flex-start; margin-top: 1px; }
+  .action-btn:hover { opacity: 1; }
+  .action-btn.aired-btn.active { background: #fff8c4; border-color: #c89211; color: #8a6510; opacity: 1; }
+  .action-btn.todo-btn.active { background: #fff1e0; border-color: #b85c00; color: #b85c00; opacity: 1; }
   .delete-btn { background: transparent; border: none; color: #c33; font-size: 18px; line-height: 1; padding: 0 4px; cursor: pointer; font-weight: 700; flex-shrink: 0; opacity: 0.5; transition: opacity 120ms; }
   .delete-btn:hover { opacity: 1; }
   .empty { color: #ccc; font-style: italic; font-size: 12px; padding: 8px 4px; }
   .legend-bar { font-size: 11px; color: #888; margin-top: 18px; padding: 10px 14px; background: #fff; border: 1px solid #e5e0d8; border-radius: 8px; line-height: 1.6; }
   .legend-bar code { background: #f0ebe2; padding: 1px 6px; border-radius: 4px; font-size: 11px; }
+  .legend-bar .palette-chip { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 3px; vertical-align: middle; border: 1px solid rgba(0,0,0,0.1); }
 </style>
 </head>
 <body>
 <h1>🎬 Live Stream Tracker — Parker Thatch</h1>
-<div class="subtitle">Q/C/S checklist with <code>localStorage</code> persistence. Check items on <strong>Active</strong> to move them to the <strong>Archive</strong> tab; uncheck on Archive to restore. Storage keys: <code>pttv_questions</code>, <code>pttv_comments</code>, <code>pttv_shoutouts</code>.</div>
+<div class="subtitle">Schema 1.2 (Tracker v2.1). Check items on <strong>Active</strong> → moves to <strong>Archive</strong> tab. Click <strong>📺</strong> on a card to mark it as <strong>aired</strong> (yellow marker-fill, persists into Archive view). Click <strong>→</strong> to flag for the end-of-session <strong>team-todos</strong> artifact. Storage keys: <code>pttv_questions</code>, <code>pttv_comments</code>, <code>pttv_shoutouts</code>.</div>
 <div class="controls">
   <button onclick="exportActive()">📋 Copy active to clipboard</button>
   <button onclick="exportAll()">📋 Copy ALL to clipboard</button>
@@ -92,28 +105,61 @@
     <ul id="shoutouts-list"></ul>
   </div>
 </div>
-<div class="legend-bar"><strong>How it works:</strong> Check an item on Active → it moves to Archive (no lingering strikethrough on Active). Uncheck on Archive → it comes back to Active. Per-item <span style="color: #c33; font-weight: 700;">×</span> and "Permanently delete all archived" are the only destructive operations — both confirm before acting. Both Active and Archive start empty each session; the long-term project archive is the persistent store.</div>
+<div class="legend-bar">
+  <strong>How it works:</strong> Check an item on Active → moves to Archive (no lingering strikethrough on Active). Uncheck on Archive → restores. <strong>📺 aired</strong> (<span class="palette-chip" style="background:#fff8c4;"></span> yellow marker-fill) = mentioned on-air; visible across Active and Archive so end-of-show you can see what made it vs what didn't. <strong>→ todo</strong> (<span class="palette-chip" style="background:#fff1e0; border-color:#b85c00;"></span> orange flag) = pull into the end-of-session team-todos artifact. Per-item <span style="color: #c33; font-weight: 700;">×</span> and "Permanently delete all archived" are the only destructive operations — both confirm before acting. Both tabs start empty each session; the long-term project archive is the persistent store.
+</div>
 <script>
   const CATEGORIES = ['questions', 'comments', 'shoutouts'];
   const KEYS = { questions: 'pttv_questions', comments: 'pttv_comments', shoutouts: 'pttv_shoutouts' };
   const tabState = { questions: 'active', comments: 'active', shoutouts: 'active' };
-  function normalizeItem(item) { return { text: item.text, checked: !!item.checked, archived: 'archived' in item ? !!item.archived : false, firstSeenAt: 'firstSeenAt' in item ? item.firstSeenAt : null }; }
+
+  // Schema 1.2: items shape = { text, checked, archived, aired, todo, firstSeenAt }
+  // Backward-compatible with 1.1 (aired/todo default false when reading older data).
+  function normalizeItem(item) {
+    return {
+      text: item.text,
+      checked: !!item.checked,
+      archived: 'archived' in item ? !!item.archived : false,
+      aired: 'aired' in item ? !!item.aired : false,
+      todo: 'todo' in item ? !!item.todo : false,
+      firstSeenAt: 'firstSeenAt' in item ? item.firstSeenAt : null
+    };
+  }
   function load(category) { try { return JSON.parse(localStorage.getItem(KEYS[category]) || '[]').map(normalizeItem); } catch (e) { return []; } }
   function save(category, items) { localStorage.setItem(KEYS[category], JSON.stringify(items)); }
+
+  // Genesis-facing contract: signature unchanged. New flags default to false.
   function appendItems(category, newItems) {
     const existing = load(category);
     const seen = new Set(existing.map(i => i.text));
     const now = new Date().toISOString();
     let added = 0;
-    for (const text of newItems) { if (!seen.has(text)) { existing.push({ text, checked: false, archived: false, firstSeenAt: now }); seen.add(text); added++; } }
+    for (const text of newItems) {
+      if (!seen.has(text)) {
+        existing.push({ text, checked: false, archived: false, aired: false, todo: false, firstSeenAt: now });
+        seen.add(text); added++;
+      }
+    }
     save(category, existing); render(category); return added;
   }
   window.appendItems = appendItems;
+
   function setTab(category, tab) { tabState[category] = tab; render(category); }
+
   function toggleArchived(category, index) {
     const items = load(category); if (!items[index]) return;
     const willArchive = !items[index].archived;
     items[index].archived = willArchive; items[index].checked = willArchive;
+    save(category, items); render(category);
+  }
+  function toggleAired(category, index) {
+    const items = load(category); if (!items[index]) return;
+    items[index].aired = !items[index].aired;
+    save(category, items); render(category);
+  }
+  function toggleTodo(category, index) {
+    const items = load(category); if (!items[index]) return;
+    items[index].todo = !items[index].todo;
     save(category, items); render(category);
   }
   function deleteItem(category, index) {
@@ -121,6 +167,7 @@
     if (!confirm('Permanently delete this archived item?\n\n' + items[index].text + '\n\nThis CANNOT be undone. The item will not appear in any future export or the long-term archive.')) return;
     items.splice(index, 1); save(category, items); render(category);
   }
+
   function render(category) {
     const items = load(category);
     const indexed = items.map((item, i) => ({ item, idx: i }));
@@ -136,14 +183,40 @@
     if (showing.length === 0) { list.innerHTML = '<li class="empty">' + (currentTab === 'active' ? 'No active items.' : 'No archived items.') + '</li>'; return; }
     list.innerHTML = '';
     showing.forEach(({ item, idx }) => {
-      const li = document.createElement('li'); if (item.archived) li.classList.add('archived');
+      const li = document.createElement('li');
+      if (item.archived) li.classList.add('archived');
+      if (item.aired) li.classList.add('aired');
+
+      // Checkbox = archive toggle (existing semantics)
       const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = item.archived; cb.id = category + '-' + idx;
       cb.addEventListener('change', () => toggleArchived(category, idx));
+
+      // Label
       const label = document.createElement('label'); label.setAttribute('for', cb.id);
       const dashIdx = item.text.indexOf(' — ');
-      if (dashIdx > -1) { const user = item.text.slice(0, dashIdx); const content = item.text.slice(dashIdx); label.innerHTML = '<span class="user">' + escapeHTML(user) + '</span>' + escapeHTML(content); }
-      else { label.textContent = item.text; }
-      li.appendChild(cb); li.appendChild(label);
+      if (dashIdx > -1) {
+        const user = item.text.slice(0, dashIdx); const content = item.text.slice(dashIdx);
+        label.innerHTML = '<span class="user">' + escapeHTML(user) + '</span>' + escapeHTML(content);
+      } else { label.textContent = item.text; }
+
+      // Schema 1.2: aired button (📺)
+      const airedBtn = document.createElement('button');
+      airedBtn.className = 'action-btn aired-btn' + (item.aired ? ' active' : '');
+      airedBtn.textContent = '📺';
+      airedBtn.title = item.aired ? 'Mark as not aired (currently flagged as aired)' : 'Mark as aired (mentioned on-air)';
+      airedBtn.setAttribute('aria-label', airedBtn.title);
+      airedBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); toggleAired(category, idx); });
+
+      // Schema 1.2: todo button (→)
+      const todoBtn = document.createElement('button');
+      todoBtn.className = 'action-btn todo-btn' + (item.todo ? ' active' : '');
+      todoBtn.textContent = '→';
+      todoBtn.title = item.todo ? 'Unflag from team-todos' : 'Flag for team-todos (end-of-session artifact)';
+      todoBtn.setAttribute('aria-label', todoBtn.title);
+      todoBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); toggleTodo(category, idx); });
+
+      li.appendChild(cb); li.appendChild(label); li.appendChild(airedBtn); li.appendChild(todoBtn);
+
       if (currentTab === 'archived') {
         const delBtn = document.createElement('button'); delBtn.className = 'delete-btn'; delBtn.textContent = '×'; delBtn.title = 'Permanently delete this item';
         delBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); deleteItem(category, idx); });
@@ -153,22 +226,46 @@
     });
   }
   function escapeHTML(s) { return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
   function exportActive() {
     const out = [];
-    for (const cat of CATEGORIES) { const prefix = cat[0].toUpperCase(); const items = load(cat).filter(i => !i.archived); out.push('++++++++++++++ ' + cat.toUpperCase() + ' ++++++++++++++'); out.push('');
-      if (items.length === 0) out.push('(no active items)'); else items.forEach(i => { out.push(prefix + ' [] ' + i.text); out.push(''); });
-      out.push('','','',''); }
+    for (const cat of CATEGORIES) {
+      const prefix = cat[0].toUpperCase();
+      const items = load(cat).filter(i => !i.archived);
+      out.push('++++++++++++++ ' + cat.toUpperCase() + ' ++++++++++++++'); out.push('');
+      if (items.length === 0) out.push('(no active items)');
+      else items.forEach(i => {
+        const flags = (i.aired ? ' [📺]' : '') + (i.todo ? ' [→todo]' : '');
+        out.push(prefix + ' [] ' + i.text + flags); out.push('');
+      });
+      out.push('','','','');
+    }
     navigator.clipboard.writeText(out.join('\n')); alert('Active items copied to clipboard.');
   }
   function exportAll() {
     const out = [];
-    for (const cat of CATEGORIES) { const prefix = cat[0].toUpperCase(); const items = load(cat); out.push('++++++++++++++ ' + cat.toUpperCase() + ' ++++++++++++++'); out.push('');
-      items.forEach(i => { const box = i.archived ? '[x]' : '[]'; out.push(prefix + ' ' + box + ' ' + i.text); out.push(''); });
-      out.push('','','',''); }
+    for (const cat of CATEGORIES) {
+      const prefix = cat[0].toUpperCase();
+      const items = load(cat);
+      out.push('++++++++++++++ ' + cat.toUpperCase() + ' ++++++++++++++'); out.push('');
+      items.forEach(i => {
+        const box = i.archived ? '[x]' : '[]';
+        const flags = (i.aired ? ' [📺]' : '') + (i.todo ? ' [→todo]' : '');
+        out.push(prefix + ' ' + box + ' ' + i.text + flags); out.push('');
+      });
+      out.push('','','','');
+    }
     navigator.clipboard.writeText(out.join('\n')); alert('All items (active + archived) copied to clipboard.');
   }
   function exportJSON() {
-    const state = { exportedAt: new Date().toISOString(), trackerVersion: '2.0', questions: load('questions'), comments: load('comments'), shoutouts: load('shoutouts') };
+    const state = {
+      exportedAt: new Date().toISOString(),
+      trackerVersion: '2.1',
+      schemaVersion: '1.2',
+      questions: load('questions'),
+      comments: load('comments'),
+      shoutouts: load('shoutouts')
+    };
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'pttv-tracker-state-' + Date.now() + '.json'; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -176,14 +273,21 @@
   function archiveAll() {
     const totalActive = CATEGORIES.reduce((sum, cat) => sum + load(cat).filter(i => !i.archived).length, 0);
     if (totalActive === 0) { alert('Nothing to archive — all items are already archived or the tracker is empty.'); return; }
-    if (!confirm('Move ALL ' + totalActive + ' active items (across all 3 columns) to the Archive tab?\n\nThis is reversible — uncheck items on the Archive tab to restore them.')) return;
-    for (const cat of CATEGORIES) { const items = load(cat); items.forEach(i => { if (!i.archived) { i.archived = true; i.checked = true; } }); save(cat, items); render(cat); }
+    if (!confirm('Move ALL ' + totalActive + ' active items (across all 3 columns) to the Archive tab?\n\nThis is reversible — uncheck items on the Archive tab to restore them. Aired/todo flags are preserved.')) return;
+    for (const cat of CATEGORIES) {
+      const items = load(cat);
+      items.forEach(i => { if (!i.archived) { i.archived = true; i.checked = true; } });
+      save(cat, items); render(cat);
+    }
   }
   function deleteAllArchived() {
     const totalArchived = CATEGORIES.reduce((sum, cat) => sum + load(cat).filter(i => i.archived).length, 0);
     if (totalArchived === 0) { alert('Nothing to delete — there are no archived items.'); return; }
     if (!confirm('Permanently delete ALL ' + totalArchived + ' archived items (across all 3 columns)?\n\nThis CANNOT be undone. Make sure you have exported full state first (💾 button above) if you want these items preserved in the long-term archive.')) return;
-    for (const cat of CATEGORIES) { const kept = load(cat).filter(i => !i.archived); save(cat, kept); render(cat); }
+    for (const cat of CATEGORIES) {
+      const kept = load(cat).filter(i => !i.archived);
+      save(cat, kept); render(cat);
+    }
   }
   CATEGORIES.forEach(render);
 </script>
