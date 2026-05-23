@@ -1,5 +1,5 @@
 <!-- PTTV-Live-Tracker-Demo -->
-<!-- Schema 1.3.0 / Tracker v2.4.2 — DEMO HARNESS (260523 b: iOS drag-reorder fix REDUX — document-level pointer listeners) -->
+<!-- Schema 1.3.0 / Tracker v2.4.3 — DEMO HARNESS (260523 b: iOS drag — kill page scroll during drag) -->
 <!--   • Identical code paths to production PTTV-Live-Tracker.html, but uses ISOLATED localStorage keys (pttv_demo_*) -->
 <!--   • Open in any browser — no Chrome extension or live show required -->
 <!--   • Demo control bar at top: Load 10/25/40 mock items + Clear demo data + Show schema sample -->
@@ -120,6 +120,9 @@
   .drag-handle:hover { opacity: 0.85; }
   .drag-handle:active { cursor: grabbing; }
   li.card.dragging { opacity: 0.35; }
+  /* v2.4.3: lock down page scrolling while a drag is in progress (iOS belt-and-suspenders) */
+  body.pttv-dragging-active { touch-action: none; overflow: hidden; -webkit-user-select: none; user-select: none; }
+  body.pttv-dragging-active * { -webkit-user-select: none; user-select: none; }
   li.card.drag-over-top { box-shadow: inset 0 3px 0 #c89211; }
   /* Phase C: command palette drawer */
   .palette-drawer { background: #fff; border: 1px solid #e5e0d8; border-radius: 10px; margin-bottom: 18px; overflow: hidden; }
@@ -475,10 +478,11 @@
       dragHandle.addEventListener('pointerdown', (e) => {
         if (item.cardId === null || item.cardId === undefined) return;
         e.preventDefault();
-        // Defensive: clear any prior stuck drag state (belt-and-suspenders for v2.4.1 footgun)
+        // Defensive: clear any prior stuck drag state
         if (window.__pttvDrag) {
           document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
           document.querySelectorAll('.drag-over-top').forEach(el => el.classList.remove('drag-over-top'));
+          document.body.classList.remove('pttv-dragging-active');
         }
         const dragState = {
           sourceCardId: item.cardId,
@@ -491,16 +495,19 @@
         };
         window.__pttvDrag = dragState;
         li.classList.add('dragging');
+        // v2.4.3: lock page-level scroll/selection IMMEDIATELY at drag-start
+        document.body.classList.add('pttv-dragging-active');
         function onMove(ev) {
           const ds = window.__pttvDrag;
           if (!ds || ds.pointerId !== ev.pointerId) return;
+          // v2.4.3: ALWAYS preventDefault on every move (iOS commits to scroll within the first few ms — can't gate this behind a threshold)
+          if (ev.cancelable) ev.preventDefault();
           if (!ds.moved) {
             const dx = Math.abs(ev.clientX - ds.startX);
             const dy = Math.abs(ev.clientY - ds.startY);
             if (dx > 5 || dy > 5) ds.moved = true;
           }
           if (!ds.moved) return;
-          ev.preventDefault();
           document.querySelectorAll('.drag-over-top').forEach(el => el.classList.remove('drag-over-top'));
           const elBelow = document.elementFromPoint(ev.clientX, ev.clientY);
           const cardEl = elBelow ? elBelow.closest('li.card') : null;
@@ -512,12 +519,18 @@
                                 : null;
           if (targetCategory === ds.sourceCategory) cardEl.classList.add('drag-over-top');
         }
+        // v2.4.3: belt-and-suspenders — separate touchmove listener with passive:false. Some iOS versions route scroll decisions through touch events specifically, ignoring pointer-event preventDefault.
+        function onTouchMove(ev) {
+          if (window.__pttvDrag && ev.cancelable) ev.preventDefault();
+        }
         function cleanup() {
           document.removeEventListener('pointermove', onMove);
           document.removeEventListener('pointerup', onUp);
           document.removeEventListener('pointercancel', onCancel);
+          document.removeEventListener('touchmove', onTouchMove);
           document.querySelectorAll('.drag-over-top').forEach(el => el.classList.remove('drag-over-top'));
           if (dragState.sourceLi) dragState.sourceLi.classList.remove('dragging');
+          document.body.classList.remove('pttv-dragging-active');
           if (window.__pttvDrag === dragState) window.__pttvDrag = null;
         }
         function onUp(ev) {
@@ -543,6 +556,7 @@
         document.addEventListener('pointermove', onMove, { passive: false });
         document.addEventListener('pointerup', onUp);
         document.addEventListener('pointercancel', onCancel);
+        document.addEventListener('touchmove', onTouchMove, { passive: false });
       });
       header.appendChild(dragHandle);
 
@@ -819,7 +833,7 @@
   function exportJSON() {
     const state = {
       exportedAt: new Date().toISOString(),
-      trackerVersion: '2.4.2',
+      trackerVersion: '2.4.3',
       schemaVersion: '1.3.0',
       questions: load('questions'),
       comments: load('comments'),
@@ -916,7 +930,7 @@
     // Build a one-item sample showing the full Schema 1.2 shape
     const sample = {
       exportedAt: new Date().toISOString(),
-      trackerVersion: '2.4.2',
+      trackerVersion: '2.4.3',
       schemaVersion: '1.3.0',
       questions: [{ text: '@sampleuser — sample question here', checked: false, archived: false, aired: true, todo: true, firstSeenAt: new Date().toISOString(), cardId: 427, notes: 'addressed on-air; she also asked about lining material — see card #519' }],
       comments: [],
