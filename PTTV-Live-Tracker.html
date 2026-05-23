@@ -1,4 +1,5 @@
 <!-- PTTV-Live-Tracker -->
+<!-- Schema 1.3.1 / Tracker v2.5.0 — Fireflies notes autopopulate (260523 c): adds per-item `lastFireflyPopulatedAt` field, window.applyFirefliesMatches(payload) entry point for Genesis-side population, ✨🪰 indicator pill in card-header next to timestamp-pill showing last populate time, and a new "Fireflies integration" section in the command palette listing the `populate notes from fireflies` mid-show command. Schema 1.3.0 -> 1.3.1: backward-compatible additive field. No breaking changes — existing notes preserved, populate runs append nondestructively. -->
 <!-- Schema 1.3.0 / Tracker v2.4.4 — drag-follow visual + full-card sibling pulse + scroll-then-pulse (260523 b): (a) Dragged card now visually follows the finger via transform:translateY (opacity bumped from 0.35→0.92, elevated box-shadow, z-index:10, pointer-events:none so elementFromPoint sees through to the drop target). (b) Sibling navigation pulse: replaced box-shadow ring with a ::before overlay that tints the whole card gold for 1.5s and fades out — much more visible than the outline ring on small screens. (c) navigateToCard scrolls first, waits 350ms for smooth-scroll to settle, then applies the pulse so the user actually sees it (previously the pulse could complete before scroll arrived at the target). -->
 <!-- Schema 1.3.0 / Tracker v2.4.3 — iOS drag-reorder fix REDUX 2 (260523 b): kills page-scroll during drag. v2.4.2 listeners fired correctly but iOS still scrolled the page because (a) preventDefault was gated behind the 5px move threshold and iOS commits to scrolling within the first few ms, and (b) touch-action:none only applied to the handle, not parent elements. Now: body gets a .pttv-dragging-active class on pointerdown which sets touch-action:none on the whole page; preventDefault called unconditionally on every pointermove; explicit touchmove listener (passive:false) as belt-and-suspenders. -->
 <!-- Schema 1.3.0 / Tracker v2.4.2 — iOS drag-reorder fix REDUX (260523 b): document-level pointermove/pointerup listeners. v2.4.1 bound listeners to the drag handle itself; on iOS the pointer leaves the handle immediately so move/up never fired and state got stuck. Now: pointerdown on handle attaches transient document-level listeners, removes them cleanly on up/cancel. Defensive cleanup on every pointerdown clears any prior stuck state. -->
@@ -152,6 +153,9 @@
   .timestamp-pill { font-size: 10px; color: #999; flex-shrink: 0; padding: 0 4px; font-variant-numeric: tabular-nums; }
   .timestamp-pill .rel { font-weight: 600; }
   .timestamp-pill .abs { opacity: 0.7; margin-left: 3px; }
+  /* v2.5.0: Fireflies populated indicator (fire + fly emoji combo reads as 'firefly') */
+  .fireflies-pill { font-size: 10px; color: #b85c00; flex-shrink: 0; padding: 1px 5px; background: #fff1e0; border: 1px solid #f3d8b5; border-radius: 8px; font-variant-numeric: tabular-nums; cursor: help; }
+  .fireflies-pill .emoji { margin-right: 2px; }
   /* Phase C: drag-handle in card-header */
   .drag-handle { cursor: grab; opacity: 0.4; font-size: 14px; padding: 6px 8px 6px 2px; line-height: 1; flex-shrink: 0; font-weight: 700; color: #666; user-select: none; -webkit-user-select: none; -ms-user-select: none; touch-action: none; -webkit-touch-callout: none; }
   .drag-handle:hover { opacity: 0.85; }
@@ -226,6 +230,11 @@
       <span class="palette-cmd">status</span> — current mode, tick count, totals across Q/C/S
       <span class="palette-cmd">we're done</span> / <span class="palette-cmd">wrap up</span> — run end-of-session ritual (merge archive + generate wrap-up checklist)
     </div>
+    <div class="palette-section">
+      <h3>Fireflies integration (v2.5.0)</h3>
+      <span class="palette-cmd">populate notes from fireflies</span> — mid-show, fetches Fireflies transcript (live or recorded), multi-signal matches tracker items, appends 🟢 HIGH / 🟡 MEDIUM confidence notes to each matched card. Nondestructive (appends below existing notes). Also runs automatically at end-of-session as part of the wrap-up ritual.
+      <div class="palette-note">After populate, each matched card shows a small <span style="color:#b85c00;">✨🪰</span> pill in its header with the time of the last populate run. HIGH = cardId verbalization or exact text match in transcript. MEDIUM = ≥2 distinctive keywords in a ±30s window around firstSeenAt. Low-confidence matches are skipped.</div>
+    </div>
     <div class="palette-note">These are typed in the Claude Chrome-extension chat, not here in the tracker. This drawer is a cheat sheet.</div>
   </div>
 </div>
@@ -277,7 +286,8 @@
       todo: 'todo' in item ? !!item.todo : false,
       firstSeenAt: 'firstSeenAt' in item ? item.firstSeenAt : null,
       cardId: ('cardId' in item && item.cardId !== null) ? item.cardId : null,
-      notes: ('notes' in item && typeof item.notes === 'string') ? item.notes : ''
+      notes: ('notes' in item && typeof item.notes === 'string') ? item.notes : '',
+      lastFireflyPopulatedAt: ('lastFireflyPopulatedAt' in item && item.lastFireflyPopulatedAt) ? item.lastFireflyPopulatedAt : null
     };
   }
   // Phase H: expand state (in-memory, keyed by cardId; ephemeral UI)
@@ -431,13 +441,82 @@
     let added = 0;
     for (const text of newItems) {
       if (!seen.has(text)) {
-        existing.push({ text, checked: false, archived: false, aired: false, todo: false, firstSeenAt: now, cardId: generateCardId(), notes: '' });
+        existing.push({ text, checked: false, archived: false, aired: false, todo: false, firstSeenAt: now, cardId: generateCardId(), notes: '', lastFireflyPopulatedAt: null });
         seen.add(text); added++;
       }
     }
     save(category, existing); render(category); return added;
   }
   window.appendItems = appendItems;
+
+  // v2.5.0: Fireflies notes autopopulate — Genesis-side entry point.
+  // Genesis runtime calls this with a payload of matches keyed by cardId after running the
+  // matching algorithm against a Fireflies transcript. This function APPENDS to the per-item
+  // `notes` field nondestructively (existing notes preserved, new block added below with a
+  // blank-line separator if notes already exist).
+  //
+  // Expected payload shape:
+  //   {
+  //     populatedAt: 'YYYY-MM-DDTHH:MM:SSZ',
+  //     matches: [
+  //       { cardId: 427, category: 'questions', lines: [
+  //         { confidence: 'HIGH', timestamp_mmss: '04:23', text: '...' },
+  //         { confidence: 'MEDIUM', timestamp_mmss: '02:15', text: '...' }
+  //       ]}
+  //     ]
+  //   }
+  //
+  // Returns { matched: N, unmatched_cardIds: [...] } so Genesis can report results.
+  function applyFirefliesMatches(payload) {
+    if (!payload || !Array.isArray(payload.matches)) return { matched: 0, unmatched_cardIds: [], error: 'invalid payload' };
+    const populatedAt = payload.populatedAt || new Date().toISOString();
+    let timeLabel = '';
+    try {
+      const d = new Date(populatedAt);
+      timeLabel = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0') + ' PT';
+    } catch (e) { timeLabel = 'unknown time'; }
+
+    const touched = new Set();
+    const unmatched = [];
+    let matched = 0;
+
+    for (const m of payload.matches) {
+      if (!m || m.cardId === null || m.cardId === undefined || !Array.isArray(m.lines) || m.lines.length === 0) {
+        if (m && m.cardId !== null && m.cardId !== undefined) unmatched.push(m.cardId);
+        continue;
+      }
+      // Find the item by cardId across all categories
+      let found = false;
+      for (const cat of CATEGORIES) {
+        const items = load(cat);
+        const idx = items.findIndex(it => it.cardId === m.cardId);
+        if (idx < 0) continue;
+        // Build the new note block
+        const lines = m.lines.map(ln => {
+          const emoji = (ln.confidence === 'HIGH') ? '🟢' : '🟡';
+          const conf = (ln.confidence === 'HIGH' || ln.confidence === 'MEDIUM') ? ln.confidence : 'MEDIUM';
+          const text = (typeof ln.text === 'string') ? ln.text.replace(/"/g, '\"') : '';
+          return emoji + ' ' + conf + ' — Aired @ ' + (ln.timestamp_mmss || '??:??') + ' — "' + text + '"';
+        });
+        const newBlock = '✨🪰 Populated ' + timeLabel + ':\n' + lines.join('\n');
+        const existing = items[idx].notes || '';
+        items[idx].notes = existing ? (existing.replace(/\s+$/, '') + '\n\n' + newBlock) : newBlock;
+        items[idx].lastFireflyPopulatedAt = populatedAt;
+        save(cat, items);
+        touched.add(cat);
+        matched++;
+        found = true;
+        break;
+      }
+      if (!found) unmatched.push(m.cardId);
+    }
+
+    // Re-render touched categories
+    for (const cat of touched) render(cat);
+
+    return { matched: matched, unmatched_cardIds: unmatched, populatedAt: populatedAt };
+  }
+  window.applyFirefliesMatches = applyFirefliesMatches;
 
   function setTab(category, tab) { tabState[category] = tab; render(category); }
 
@@ -643,6 +722,19 @@
         tsPill.innerHTML = '<span class="rel">' + ts.rel + '</span><span class="abs">' + ts.abs + '</span>';
         tsPill.title = 'First seen ' + ts.rel + ' into the session at ' + ts.abs;
         header.appendChild(tsPill);
+      }
+      // v2.5.0: Fireflies populated indicator (✨🪰 + HH:MM PT of last populate run)
+      if (item.lastFireflyPopulatedAt) {
+        try {
+          const d = new Date(item.lastFireflyPopulatedAt);
+          const hh = String(d.getHours()).padStart(2,'0');
+          const mm = String(d.getMinutes()).padStart(2,'0');
+          const ffPill = document.createElement('span');
+          ffPill.className = 'fireflies-pill';
+          ffPill.innerHTML = '<span class="emoji">✨🪰</span>' + hh + ':' + mm;
+          ffPill.title = 'Notes populated from Fireflies at ' + d.toLocaleString();
+          header.appendChild(ffPill);
+        } catch (e) { /* swallow */ }
       }
 
       // Phase H: spacer + expand toggle (always), then delete (archived only)
@@ -858,7 +950,7 @@
   function exportJSON() {
     const state = {
       exportedAt: new Date().toISOString(),
-      trackerVersion: '2.4.4',
+      trackerVersion: '2.5.0',
       schemaVersion: '1.3.0',
       questions: load('questions'),
       comments: load('comments'),
