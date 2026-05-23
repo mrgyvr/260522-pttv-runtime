@@ -1,4 +1,5 @@
 <!-- PTTV-Live-Tracker -->
+<!-- Schema 1.3.0 / Tracker v2.4.4 — drag-follow visual + full-card sibling pulse + scroll-then-pulse (260523 b): (a) Dragged card now visually follows the finger via transform:translateY (opacity bumped from 0.35→0.92, elevated box-shadow, z-index:10, pointer-events:none so elementFromPoint sees through to the drop target). (b) Sibling navigation pulse: replaced box-shadow ring with a ::before overlay that tints the whole card gold for 1.5s and fades out — much more visible than the outline ring on small screens. (c) navigateToCard scrolls first, waits 350ms for smooth-scroll to settle, then applies the pulse so the user actually sees it (previously the pulse could complete before scroll arrived at the target). -->
 <!-- Schema 1.3.0 / Tracker v2.4.3 — iOS drag-reorder fix REDUX 2 (260523 b): kills page-scroll during drag. v2.4.2 listeners fired correctly but iOS still scrolled the page because (a) preventDefault was gated behind the 5px move threshold and iOS commits to scrolling within the first few ms, and (b) touch-action:none only applied to the handle, not parent elements. Now: body gets a .pttv-dragging-active class on pointerdown which sets touch-action:none on the whole page; preventDefault called unconditionally on every pointermove; explicit touchmove listener (passive:false) as belt-and-suspenders. -->
 <!-- Schema 1.3.0 / Tracker v2.4.2 — iOS drag-reorder fix REDUX (260523 b): document-level pointermove/pointerup listeners. v2.4.1 bound listeners to the drag handle itself; on iOS the pointer leaves the handle immediately so move/up never fired and state got stuck. Now: pointerdown on handle attaches transient document-level listeners, removes them cleanly on up/cancel. Defensive cleanup on every pointerdown clears any prior stuck state. -->
 <!-- Schema 1.3.0 / Tracker v2.4.1 — iOS / touch fix for drag-reorder (260523 b): replaces HTML5 D&D with Pointer Events API — works on mouse, touch, and pen unified. Larger hit target on handle. user-select + -webkit-user-select + touch-action: none on handle to suppress text selection on iOS Safari. -->
@@ -76,7 +77,7 @@
   .tab-count { font-size: 10px; opacity: 0.75; margin-left: 3px; font-variant-numeric: tabular-nums; }
   ul { list-style: none; margin: 0; padding: 0; max-height: 65vh; overflow-y: auto; flex: 1; }
   /* v2.1.2: cards become two-row blocks — controls header on top, content below using full card width */
-  li.card { display: flex; flex-direction: column; gap: 4px; padding: 7px 9px; margin-bottom: 5px; border-radius: 5px; font-size: 13px; line-height: 1.4; transition: background-color 160ms, opacity 160ms; border: 1px solid transparent; }
+  li.card { display: flex; flex-direction: column; gap: 4px; padding: 7px 9px; margin-bottom: 5px; border-radius: 5px; font-size: 13px; line-height: 1.4; transition: background-color 160ms, opacity 160ms; border: 1px solid transparent; position: relative; }
   li.card:last-child { margin-bottom: 0; }
   /* v2.1.2: category background tints — at-a-glance column identity, paler than the column header palette so cards don't overwhelm the text */
   .section.questions li.card { background-color: #f3edf7; }   /* very light lavender, matches #7e3a93 header */
@@ -137,8 +138,10 @@
   .sibling-text { flex: 1; color: #333; word-break: break-word; }
   .sibling-statuses { flex-shrink: 0; display: flex; gap: 4px; align-items: center; align-self: flex-start; margin-top: 1px; font-size: 11px; opacity: 0.85; }
   /* Phase I: card pulse animation (navigation target indicator) */
-  @keyframes card-pulse-flash { 0% { box-shadow: 0 0 0 0 rgba(200, 146, 17, 0.55); } 60% { box-shadow: 0 0 0 12px rgba(200, 146, 17, 0); } 100% { box-shadow: 0 0 0 0 rgba(200, 146, 17, 0); } }
-  li.card.card-pulse { animation: card-pulse-flash 1.5s ease-out; outline: 2px solid #c89211; outline-offset: 1px; }
+  /* v2.4.4: full-card overlay pulse (replaces box-shadow ring — more visible on small screens) */
+  @keyframes card-pulse-overlay { 0% { opacity: 0.55; } 40% { opacity: 0.30; } 100% { opacity: 0; } }
+  li.card.card-pulse { outline: 2px solid #c89211; outline-offset: 2px; }
+  li.card.card-pulse::before { content: ''; position: absolute; inset: 0; background-color: #c89211; pointer-events: none; border-radius: 5px; animation: card-pulse-overlay 1.5s ease-out forwards; }
   /* Phase I: back pill (navigation breadcrumb) */
   .back-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; margin-bottom: 6px; background-color: #fff8e0; border: 1px solid #c89211; border-radius: 12px; font-size: 11px; color: #8a6510; cursor: pointer; transition: background-color 120ms; align-self: flex-start; }
   .back-pill:hover { background-color: #ffefb8; }
@@ -153,11 +156,11 @@
   .drag-handle { cursor: grab; opacity: 0.4; font-size: 14px; padding: 6px 8px 6px 2px; line-height: 1; flex-shrink: 0; font-weight: 700; color: #666; user-select: none; -webkit-user-select: none; -ms-user-select: none; touch-action: none; -webkit-touch-callout: none; }
   .drag-handle:hover { opacity: 0.85; }
   .drag-handle:active { cursor: grabbing; }
-  li.card.dragging { opacity: 0.35; }
+  li.card.dragging { opacity: 0.92; z-index: 10; box-shadow: 0 12px 30px rgba(0,0,0,0.3); cursor: grabbing; will-change: transform; pointer-events: none; }
   /* v2.4.3: lock down page scrolling while a drag is in progress (iOS belt-and-suspenders) */
   body.pttv-dragging-active { touch-action: none; overflow: hidden; -webkit-user-select: none; user-select: none; }
   body.pttv-dragging-active * { -webkit-user-select: none; user-select: none; }
-  li.card.drag-over-top { box-shadow: inset 0 3px 0 #c89211; }
+  li.card.drag-over-top { box-shadow: inset 0 5px 0 #ffb800; }
   /* Phase C: command palette drawer */
   .palette-drawer { background: #fff; border: 1px solid #e5e0d8; border-radius: 10px; margin-bottom: 18px; overflow: hidden; }
   .palette-toggle { width: 100%; padding: 9px 14px; background: transparent; border: none; font-size: 12px; font-weight: 600; color: #555; text-align: left; cursor: pointer; font-family: inherit; display: flex; align-items: center; gap: 6px; transition: background 120ms; }
@@ -348,10 +351,13 @@
     setTimeout(() => {
       const el = document.querySelector('li.card[data-card-id="' + targetCardId + '"]');
       if (!el) return;
+      // v2.4.4: scroll first, delay pulse so it lands while target is centered in view
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el.classList.add('card-pulse');
-      if (pulseTimeout) clearTimeout(pulseTimeout);
-      pulseTimeout = setTimeout(() => { el.classList.remove('card-pulse'); pulseTimeout = null; }, 1500);
+      setTimeout(() => {
+        el.classList.add('card-pulse');
+        if (pulseTimeout) clearTimeout(pulseTimeout);
+        pulseTimeout = setTimeout(() => { el.classList.remove('card-pulse'); pulseTimeout = null; }, 1500);
+      }, 350);
     }, 60);
   }
   function clearNavigationSource() {
@@ -524,6 +530,9 @@
             if (dx > 5 || dy > 5) ds.moved = true;
           }
           if (!ds.moved) return;
+          // v2.4.4: visual follow — translate the source li with the finger (Y-only, reorder is vertical)
+          const offsetY = ev.clientY - ds.startY;
+          ds.sourceLi.style.transform = 'translateY(' + offsetY + 'px) scale(1.03)';
           document.querySelectorAll('.drag-over-top').forEach(el => el.classList.remove('drag-over-top'));
           const elBelow = document.elementFromPoint(ev.clientX, ev.clientY);
           const cardEl = elBelow ? elBelow.closest('li.card') : null;
@@ -545,7 +554,7 @@
           document.removeEventListener('pointercancel', onCancel);
           document.removeEventListener('touchmove', onTouchMove);
           document.querySelectorAll('.drag-over-top').forEach(el => el.classList.remove('drag-over-top'));
-          if (dragState.sourceLi) dragState.sourceLi.classList.remove('dragging');
+          if (dragState.sourceLi) { dragState.sourceLi.style.transform = ''; dragState.sourceLi.classList.remove('dragging'); }
           document.body.classList.remove('pttv-dragging-active');
           if (window.__pttvDrag === dragState) window.__pttvDrag = null;
         }
@@ -849,7 +858,7 @@
   function exportJSON() {
     const state = {
       exportedAt: new Date().toISOString(),
-      trackerVersion: '2.4.3',
+      trackerVersion: '2.4.4',
       schemaVersion: '1.3.0',
       questions: load('questions'),
       comments: load('comments'),
