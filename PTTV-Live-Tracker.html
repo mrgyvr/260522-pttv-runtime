@@ -1,4 +1,9 @@
 <!-- PTTV-Live-Tracker -->
+<!-- Schema 1.2 / Tracker v2.1.2 — changes from v2.1.1 (260523 b): -->
+<!--   • LAYOUT: controls (checkbox + 📺 + 🚩todo + ×) on a thin header row; question text gets full card width below -->
+<!--   • COLOR: category-tinted card backgrounds (Q=lavender / C=mint / S=cream) — at-a-glance column identity -->
+<!--   • AIRED: marker-fill highlights TEXT only (like a real highlighter), not the whole card — category color stays visible -->
+<!--   • NOTATION: button reads "🚩todo" (no brackets, no hyphen, no spaces) — the button frame replaces brackets visually -->
 <!-- Schema 1.2.1 / Tracker v2.1.1 — changes from 1.2 (260523 b): -->
 <!--   • BUG FIX: clicking the card body no longer archives (removed label `for` attribute that proxied to checkbox) -->
 <!--   • TODO button text: was [→], now [🚩 to-do 🚩] — much clearer purpose -->
@@ -46,24 +51,37 @@
   .section.shoutouts .tab-btn.active { background: #c89211; }
   .tab-count { font-size: 10px; opacity: 0.75; margin-left: 3px; font-variant-numeric: tabular-nums; }
   ul { list-style: none; margin: 0; padding: 0; max-height: 65vh; overflow-y: auto; flex: 1; }
-  li { padding: 8px 4px; border-bottom: 1px solid #f5f0e8; display: flex; align-items: flex-start; gap: 6px; font-size: 13px; line-height: 1.4; transition: background-color 160ms; }
-  li:last-child { border-bottom: none; }
-  /* Schema 1.2: aired marker-fill — yellow highlighter persisting into archive view */
-  li.aired { background-color: #fff8c4; border-radius: 4px; margin: 2px 0; padding: 8px 6px; }
-  li.archived label { text-decoration: line-through; color: #bbb; }
-  li.archived .user { color: #ccc; }
-  li.archived.aired label { color: #8a7a3a; }  /* archived + aired = subdued strikethrough but yellow stays */
-  li.archived.aired .user { color: #a89760; }
-  input[type="checkbox"] { margin-top: 3px; cursor: pointer; flex-shrink: 0; }
-  label { cursor: default; word-break: break-word; flex: 1; }
+  /* v2.1.2: cards become two-row blocks — controls header on top, content below using full card width */
+  li.card { display: flex; flex-direction: column; gap: 4px; padding: 7px 9px; margin-bottom: 5px; border-radius: 5px; font-size: 13px; line-height: 1.4; transition: background-color 160ms, opacity 160ms; border: 1px solid transparent; }
+  li.card:last-child { margin-bottom: 0; }
+  /* v2.1.2: category background tints — at-a-glance column identity, paler than the column header palette so cards don't overwhelm the text */
+  .section.questions li.card { background-color: #f3edf7; }   /* very light lavender, matches #7e3a93 header */
+  .section.comments  li.card { background-color: #e5f0f0; }   /* very light mint, matches #1d7373 header */
+  .section.shoutouts li.card { background-color: #f9efd9; }   /* very light cream, matches #c89211 header */
+  /* Hover lift */
+  .section.questions li.card:hover { background-color: #ece2f3; }
+  .section.comments  li.card:hover { background-color: #d8e8e8; }
+  .section.shoutouts li.card:hover { background-color: #f5e6c4; }
+  /* Archived: dim the card, strike the text */
+  li.card.archived { opacity: 0.55; }
+  li.card.archived .text { text-decoration: line-through; color: #888; }
+  li.card.archived .user { color: #aaa; }
+  /* v2.1.2: AIRED marker-fill is on the TEXT span only, not the whole card — category color stays visible */
+  li.card.aired .text { background-color: #fff8c4; padding: 0 4px; border-radius: 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+  li.card.aired.archived .text { background-color: #f3eecc; color: #8a7a3a; }  /* subdued when both archived + aired */
+  /* v2.1.2: thin header row holds all controls; doesn't compete for text-wrap space */
+  .card-header { display: flex; align-items: center; gap: 6px; padding-bottom: 4px; border-bottom: 1px solid rgba(0,0,0,0.06); }
+  .card-body { word-break: break-word; }
+  input[type="checkbox"] { cursor: pointer; flex-shrink: 0; margin: 0; }
+  label { cursor: default; display: block; }
   .user { font-weight: 600; color: #555; }
-  /* Schema 1.2: action buttons (📺 aired, → todo) — between label and × delete */
-  .action-btn { background: transparent; border: 1px solid #e5e0d8; color: #888; border-radius: 4px; padding: 1px 5px; font-size: 13px; line-height: 1.2; cursor: pointer; font-family: inherit; flex-shrink: 0; opacity: 0.45; transition: opacity 120ms, background 120ms, border-color 120ms, color 120ms; align-self: flex-start; margin-top: 1px; }
+  /* Action buttons sit in the .card-header row */
+  .action-btn { background: transparent; border: 1px solid rgba(0,0,0,0.12); color: #666; border-radius: 4px; padding: 2px 6px; font-size: 12px; line-height: 1.2; cursor: pointer; font-family: inherit; flex-shrink: 0; opacity: 0.5; transition: opacity 120ms, background 120ms, border-color 120ms, color 120ms; }
   .action-btn:hover { opacity: 1; }
   .action-btn.aired-btn.active { background: #fff8c4; border-color: #c89211; color: #8a6510; opacity: 1; }
-  .action-btn.todo-btn { padding: 1px 7px; letter-spacing: 0.2px; }  /* wider for text+icon content */
+  .action-btn.todo-btn { padding: 2px 8px; letter-spacing: 0.15px; }
   .action-btn.todo-btn.active { background: #fff1e0; border-color: #b85c00; color: #b85c00; opacity: 1; }
-  .delete-btn { background: transparent; border: none; color: #c33; font-size: 18px; line-height: 1; padding: 0 4px; cursor: pointer; font-weight: 700; flex-shrink: 0; opacity: 0.5; transition: opacity 120ms; }
+  .delete-btn { background: transparent; border: none; color: #c33; font-size: 18px; line-height: 1; padding: 0 4px; cursor: pointer; font-weight: 700; flex-shrink: 0; opacity: 0.5; transition: opacity 120ms; margin-left: auto; }
   .delete-btn:hover { opacity: 1; }
   .empty { color: #ccc; font-style: italic; font-size: 12px; padding: 8px 4px; }
   .legend-bar { font-size: 11px; color: #888; margin-top: 18px; padding: 10px 14px; background: #fff; border: 1px solid #e5e0d8; border-radius: 8px; line-height: 1.6; }
@@ -188,46 +206,61 @@
     if (showing.length === 0) { list.innerHTML = '<li class="empty">' + (currentTab === 'active' ? 'No active items.' : 'No archived items.') + '</li>'; return; }
     list.innerHTML = '';
     showing.forEach(({ item, idx }) => {
+      // v2.1.2: card is a flex column — header row (controls) on top, body row (text) below
       const li = document.createElement('li');
+      li.className = 'card';
       if (item.archived) li.classList.add('archived');
       if (item.aired) li.classList.add('aired');
 
-      // Checkbox = archive toggle (existing semantics)
+      // ---- CARD HEADER (controls row) ----
+      const header = document.createElement('div');
+      header.className = 'card-header';
+
+      // Checkbox = archive toggle
       const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = item.archived; cb.id = category + '-' + idx;
+      cb.title = item.archived ? 'Restore to Active' : 'Move to Archive';
       cb.addEventListener('change', () => toggleArchived(category, idx));
 
-      // Label
-      // Schema 1.2.1: label.for intentionally NOT set — clicking the card body should not archive (that's only the checkbox's job). Body click is also reserved for Phase H notes-expand.
-      const label = document.createElement('label');
-      const dashIdx = item.text.indexOf(' — ');
-      if (dashIdx > -1) {
-        const user = item.text.slice(0, dashIdx); const content = item.text.slice(dashIdx);
-        label.innerHTML = '<span class="user">' + escapeHTML(user) + '</span>' + escapeHTML(content);
-      } else { label.textContent = item.text; }
-
-      // Schema 1.2: aired button (📺)
+      // Aired button (📺)
       const airedBtn = document.createElement('button');
       airedBtn.className = 'action-btn aired-btn' + (item.aired ? ' active' : '');
       airedBtn.textContent = '📺';
-      airedBtn.title = item.aired ? 'Mark as not aired (currently flagged as aired)' : 'Mark as aired (mentioned on-air)';
+      airedBtn.title = item.aired ? 'Mark as not aired' : 'Mark as aired (mentioned on-air)';
       airedBtn.setAttribute('aria-label', airedBtn.title);
       airedBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); toggleAired(category, idx); });
 
-      // Schema 1.2: todo button (→)
+      // Todo button (🚩todo)
       const todoBtn = document.createElement('button');
       todoBtn.className = 'action-btn todo-btn' + (item.todo ? ' active' : '');
-      todoBtn.textContent = '🚩 to-do 🚩';
+      todoBtn.textContent = '🚩todo';
       todoBtn.title = item.todo ? 'Unflag from team-todos' : 'Flag for team-todos (end-of-session artifact)';
       todoBtn.setAttribute('aria-label', todoBtn.title);
       todoBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); toggleTodo(category, idx); });
 
-      li.appendChild(cb); li.appendChild(label); li.appendChild(airedBtn); li.appendChild(todoBtn);
+      header.appendChild(cb); header.appendChild(airedBtn); header.appendChild(todoBtn);
 
       if (currentTab === 'archived') {
         const delBtn = document.createElement('button'); delBtn.className = 'delete-btn'; delBtn.textContent = '×'; delBtn.title = 'Permanently delete this item';
         delBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); deleteItem(category, idx); });
-        li.appendChild(delBtn);
+        header.appendChild(delBtn);
       }
+
+      // ---- CARD BODY (full-width text) ----
+      const body = document.createElement('div');
+      body.className = 'card-body';
+      const label = document.createElement('label');
+      const dashIdx = item.text.indexOf(' — ');
+      if (dashIdx > -1) {
+        const user = item.text.slice(0, dashIdx);
+        const content = item.text.slice(dashIdx + 3); // skip ' — ' separator
+        label.innerHTML = '<span class="user">' + escapeHTML(user) + '</span> — <span class="text">' + escapeHTML(content) + '</span>';
+      } else {
+        label.innerHTML = '<span class="text">' + escapeHTML(item.text) + '</span>';
+      }
+      body.appendChild(label);
+
+      li.appendChild(header);
+      li.appendChild(body);
       list.appendChild(li);
     });
   }
@@ -241,7 +274,7 @@
       out.push('++++++++++++++ ' + cat.toUpperCase() + ' ++++++++++++++'); out.push('');
       if (items.length === 0) out.push('(no active items)');
       else items.forEach(i => {
-        const flags = (i.aired ? ' [📺]' : '') + (i.todo ? ' [🚩to-do]' : '');
+        const flags = (i.aired ? ' 📺' : '') + (i.todo ? ' 🚩todo' : '');
         out.push(prefix + ' [] ' + i.text + flags); out.push('');
       });
       out.push('','','','');
@@ -256,7 +289,7 @@
       out.push('++++++++++++++ ' + cat.toUpperCase() + ' ++++++++++++++'); out.push('');
       items.forEach(i => {
         const box = i.archived ? '[x]' : '[]';
-        const flags = (i.aired ? ' [📺]' : '') + (i.todo ? ' [🚩to-do]' : '');
+        const flags = (i.aired ? ' 📺' : '') + (i.todo ? ' 🚩todo' : '');
         out.push(prefix + ' ' + box + ' ' + i.text + flags); out.push('');
       });
       out.push('','','','');
