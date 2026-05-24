@@ -56,7 +56,7 @@
 <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width: 0%"></div></div>
 <div id="items-root"></div>
 <div class="actions">
-  <button class="danger" onclick="resetChecks()">↺ Reset</button>
+  <button class="danger" onclick="resetChecks()">⇺ Reset</button>
   <span class="action-status" id="action-status"></span>
 </div>
 <script>
@@ -65,53 +65,53 @@
     {
       id: "verify-bootstrap-commit",
       tier: "blue",
-      title: "Bootstrap was just updated — verify the commit landed",
-      meta: 'Open <a href="https://github.com/mrgyvr/260522-pttv-live-monitor/blob/main/PTTV-Chat-Bootstrap.md" target="_blank">PTTV-Chat-Bootstrap.md</a> in the private repo. The first-line header should read <code>PTTV Chat Bootstrap (260524 c)</code>. If it does, the bootstrap is current and the next chat will pick up correctly.',
+      title: "Bootstrap was just updated \u2014 verify the commit landed",
+      meta: `Open <a href="https://github.com/mrgyvr/260522-pttv-live-monitor/blob/main/PTTV-Chat-Bootstrap.md" target="_blank">PTTV-Chat-Bootstrap.md</a> in the private repo. The first-line header should read <code>PTTV Chat Bootstrap (260524 c)</code>. If it does, the bootstrap is current and the next chat will pick up correctly.`,
     },
     {
       id: "save-matcher-backup",
       tier: "orange",
       title: "Optional: save a local copy of the matcher_v2 work",
-      meta: 'Belt-and-suspenders since matcher_v2 is unvalidated. Either <code>git clone</code> the private repo OR download the four files in <a href="https://github.com/mrgyvr/260522-pttv-live-monitor/tree/main/dryrun-fireflies-matcher-v2" target="_blank">dryrun-fireflies-matcher-v2/</a> to a local PTTV folder. Skip if you trust GitHub as the only copy.',
+      meta: `Belt-and-suspenders since matcher_v2 is unvalidated. Either <code>git clone</code> the private repo OR download the four files in <a href="https://github.com/mrgyvr/260522-pttv-live-monitor/tree/main/dryrun-fireflies-matcher-v2" target="_blank">dryrun-fireflies-matcher-v2/</a> to a local PTTV folder. Skip if you trust GitHub as the only copy.`,
     },
     {
       id: "pick-environment",
       tier: "green",
       title: "Decide which environment hosts the new chat",
-      meta: '<strong>claude.ai desktop</strong> — recommended. Typically has bash, so the new chat can actually run <code>matcher_v2.py</code> and validate the 9/9. <strong>claude.ai mobile</strong> — works for design and discussion but won\'t execute Python. <strong>Chrome extension</strong> — only for live shows (not the case right now). Pick desktop if available.',
+      meta: `<strong>claude.ai desktop</strong> \u2014 recommended. Typically has bash, so the new chat can actually run <code>matcher_v2.py</code> and validate the 9/9. <strong>claude.ai mobile</strong> \u2014 works for design and discussion but won't execute Python. <strong>Chrome extension</strong> \u2014 only for live shows (not the case right now). Pick desktop if available.`,
     },
     {
       id: "open-new-chat",
       tier: "red",
       title: "Open a fresh chat in the PTTV project (chosen environment)",
-      meta: 'In claude.ai: open the PTTV project, hit "New chat". The Genesis prompt loads automatically as custom instructions, so the new Claude starts with full operating context.',
+      meta: `In claude.ai: open the PTTV project, hit "New chat". The Genesis prompt loads automatically as custom instructions, so the new Claude starts with full operating context.`,
     },
     {
       id: "paste-kickoff",
       tier: "red",
       title: "Paste the kickoff template as the first message",
-      meta: 'Copy from the project Files panel\'s <code>PTTV-New-Chats-Kickoff-Template.md</code> file, OR use this exact text:<pre>Continuing PTTV iteration work. Before doing anything else:
+      meta: `Copy from the project Files panel's <code>PTTV-New-Chats-Kickoff-Template.md</code> file, OR use this exact text:<pre>Continuing PTTV iteration work. Before doing anything else:
 
-1. Fetch PTTV-Chat-Bootstrap.md from the repo root of mrgyvr/260522-pttv-live-monitor — use the native GitHub MCP (preferred) or Composio with account="pttv" as fallback.
-2. Read it carefully, summarize the work items back in your own words, and ask me what to tackle first. Don\'t blast ahead — wait for direction.</pre>',
+1. Fetch PTTV-Chat-Bootstrap.md from the repo root of mrgyvr/260522-pttv-live-monitor \u2014 use the native GitHub MCP (preferred) or Composio with account="pttv" as fallback.
+2. Read it carefully, summarize the work items back in your own words, and ask me what to tackle first. Don't blast ahead \u2014 wait for direction.</pre>`,
     },
     {
       id: "verify-pickup",
       tier: "red",
       title: "Verify the new chat picked up context correctly",
-      meta: 'The new Claude should: (a) successfully fetch the bootstrap, (b) summarize current state in its own words including matcher_v2\'s unvalidated status, (c) explicitly mention the response-capture algorithm OR Phase J in progress, (d) ask what to tackle first. If any of those don\'t happen, retry — fetch may have silently failed.',
+      meta: `The new Claude should: (a) successfully fetch the bootstrap, (b) summarize current state in its own words including matcher_v2's unvalidated status, (c) explicitly mention the response-capture algorithm OR Phase J in progress, (d) ask what to tackle first. If any of those don't happen, retry \u2014 fetch may have silently failed.`,
     },
     {
       id: "first-task",
       tier: "orange",
       title: "Tell the new chat what to tackle first",
-      meta: 'Most likely option: ask it to run <code>python3 dryrun-fireflies-matcher-v2/matcher_v2.py</code> and compare output to the predicted 9/9 in <code>TRACE-PREDICTION.md</code>. If it has bash, this validates Phase J item 2 in about a minute. If no bash, ask it to do something else from the open phases list (Phase C, D, or another Phase J item like live-query design).',
+      meta: `Most likely option: ask it to run <code>python3 dryrun-fireflies-matcher-v2/matcher_v2.py</code> and compare output to the predicted 9/9 in <code>TRACE-PREDICTION.md</code>. If it has bash, this validates Phase J item 2 in about a minute. If no bash, ask it to do something else from the open phases list (Phase C, D, or another Phase J item like live-query design).`,
     },
     {
       id: "close-this-chat",
       tier: "blue",
       title: "Once the new chat is rolling, close this tab",
-      meta: 'This chat stays in your claude.ai history. Closing the tab just removes it from your active tabs. The bootstrap commit is the handoff — nothing else in this chat needs preserving.',
+      meta: `This chat stays in your claude.ai history. Closing the tab just removes it from your active tabs. The bootstrap commit is the handoff \u2014 nothing else in this chat needs preserving.`,
     },
   ];
 
